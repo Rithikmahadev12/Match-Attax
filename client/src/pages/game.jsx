@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CardDisplay from '../components/CardDisplay';
-import BattleArena from '../components/BattleArena';
+import CardDisplay from '../components/carddisplay';
+import BattleArena from '../components/battlearena';
 import { useStore } from '../store/gameStore';
 import { useGame } from '../hooks/useGame';
 
