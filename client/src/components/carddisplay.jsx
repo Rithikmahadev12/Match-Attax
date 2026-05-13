@@ -1,78 +1,179 @@
-const SPECIAL_LABELS = {
-  '100Club': { text: '100 CLUB', gradient: 'linear-gradient(90deg,#b8860b,#FFD700,#b8860b)' },
-  MOTM: { text: 'MAN OF THE MATCH', gradient: 'linear-gradient(90deg,#0050cc,#3b9eff,#0050cc)' },
-  HatTrick: { text: 'HAT-TRICK HERO', gradient: 'linear-gradient(90deg,#6600bb,#c800ff,#6600bb)' },
+const SPECIAL_META = {
+  '100Club': {
+    label: '100 CLUB',
+    gradient: 'linear-gradient(90deg,#7a5200,#ffd700,#ffc200,#7a5200)',
+    textColor: '#3a2000',
+    glowColor: 'rgba(255,215,0,0.4)',
+  },
+  MOTM: {
+    label: 'MAN OF THE MATCH',
+    gradient: 'linear-gradient(90deg,#003080,#00a8ff,#0090e0,#003080)',
+    textColor: '#001840',
+    glowColor: 'rgba(0,168,255,0.4)',
+  },
+  HatTrick: {
+    label: 'HAT-TRICK HERO',
+    gradient: 'linear-gradient(90deg,#5c0090,#c800ff,#a000e0,#5c0090)',
+    textColor: '#2a003a',
+    glowColor: 'rgba(200,0,255,0.4)',
+  },
 };
 
-const POS_COLOR = {
-  GK:'#b45309', CB:'#1d4ed8', RB:'#1d4ed8', LB:'#1d4ed8',
-  CDM:'#15803d', CM:'#15803d', CAM:'#c2410c',
-  SS:'#c2410c', RW:'#b91c1c', LW:'#b91c1c', ST:'#991b1b',
+const POS_COLORS = {
+  GK: '#e67e00',
+  CB: '#1a6ef5', RB: '#1a6ef5', LB: '#1a6ef5',
+  CDM: '#15a050', CM: '#15a050',
+  CAM: '#e05010', SS: '#e05010',
+  RW: '#cc2020', LW: '#cc2020', ST: '#aa1010',
 };
+
+const STAT_CONFIG = [
+  { key: 'attack',  label: 'ATK', color: '#ff5c5c', bg: 'rgba(255,92,92,0.15)' },
+  { key: 'defense', label: 'DEF', color: '#4aabff', bg: 'rgba(74,171,255,0.15)' },
+  { key: 'star',    label: 'STR', color: '#ffd700', bg: 'rgba(255,215,0,0.15)' },
+];
 
 function cardClass(special) {
-  if (special === '100Club') return 'card-gold';
-  if (special === 'MOTM') return 'card-motm';
-  if (special === 'HatTrick') return 'card-hattrick';
-  return 'card-standard';
+  if (special === '100Club') return 'card-shell card-gold card-shimmer';
+  if (special === 'MOTM')    return 'card-shell card-motm card-shimmer';
+  if (special === 'HatTrick') return 'card-shell card-hattrick card-shimmer';
+  return 'card-shell card-standard';
 }
 
 export default function CardDisplay({ card, size = 'md', selected, onClick, highlight }) {
   if (!card) return null;
-  const special = SPECIAL_LABELS[card.special];
+  const special = SPECIAL_META[card.special];
   const sm = size === 'sm';
+  const posColor = POS_COLORS[card.position] || '#555';
+
+  let extraClass = '';
+  if (selected) extraClass = 'selected';
+  else if (highlight === 'win') extraClass = 'highlight-win';
+  else if (highlight === 'lose') extraClass = 'highlight-lose';
 
   return (
-    <div onClick={onClick}
-      className={`relative rounded-2xl overflow-hidden select-none transition-all duration-200 ${cardClass(card.special)}
-        ${sm ? 'w-32' : 'w-48'}
-        ${onClick ? 'cursor-pointer' : ''}
-        ${selected ? 'ring-2 ring-yellow-400 scale-105 shadow-yellow-400/30 shadow-xl' : onClick ? 'hover:scale-105 hover:shadow-xl' : ''}
-        ${highlight === 'win' ? 'ring-2 ring-green-400 shadow-green-400/20 shadow-xl' : ''}
-        ${highlight === 'lose' ? 'ring-2 ring-red-500 opacity-60' : ''}
-      `}>
-
+    <div
+      onClick={onClick}
+      className={`${cardClass(card.special)} ${extraClass}`}
+      style={{
+        width: sm ? '128px' : '188px',
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none',
+      }}
+    >
       {/* Special banner */}
       {special && (
-        <div className="text-center text-[9px] font-bold py-1 text-black tracking-widest"
-          style={{ background: special.gradient }}>
-          {special.text}
+        <div style={{
+          background: special.gradient,
+          color: special.textColor,
+          fontSize: '8px',
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 800,
+          letterSpacing: '0.15em',
+          textAlign: 'center',
+          padding: '4px 0',
+          position: 'relative',
+          zIndex: 2,
+        }}>
+          {special.label}
         </div>
       )}
 
-      <div className={sm ? 'p-2.5' : 'p-3'}>
-        {/* Club / Nation row */}
-        <div className="flex justify-between items-center mb-1">
-          <span className={`${sm ? 'text-[9px]' : 'text-[10px]'} text-gray-400 font-medium truncate`}>{card.club}</span>
-          <span className={`${sm ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>{card.nation}</span>
+      <div style={{ padding: sm ? '10px' : '14px', position: 'relative', zIndex: 2 }}>
+
+        {/* Top row: club + nation */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: sm ? 6 : 8 }}>
+          <span style={{
+            fontSize: sm ? '8px' : '9px',
+            color: 'rgba(255,255,255,0.35)',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            maxWidth: '60%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {card.club}
+          </span>
+          <span style={{
+            fontSize: sm ? '8px' : '9px',
+            color: 'rgba(255,255,255,0.25)',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}>
+            {card.nation}
+          </span>
         </div>
 
-        {/* Name */}
-        <div className={`font-display leading-none mb-2 ${sm ? 'text-base' : 'text-xl'} text-white`}>
+        {/* Player name */}
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 900,
+          fontSize: sm ? '18px' : '26px',
+          lineHeight: 1,
+          color: '#ffffff',
+          marginBottom: sm ? 6 : 10,
+          letterSpacing: '-0.01em',
+          textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        }}>
           {card.name}
         </div>
 
         {/* Position pill */}
-        <div className="mb-3">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md text-white`}
-            style={{ background: POS_COLOR[card.position] || '#374151' }}>
+        <div style={{ marginBottom: sm ? 8 : 12 }}>
+          <span style={{
+            background: posColor,
+            color: '#fff',
+            fontSize: '9px',
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 800,
+            letterSpacing: '0.1em',
+            padding: '2px 7px',
+            borderRadius: '6px',
+            boxShadow: `0 2px 8px ${posColor}44`,
+          }}>
             {card.position}
           </span>
         </div>
 
         {/* Stats */}
-        <div className={`space-y-${sm ? '1' : '1.5'}`}>
-          {[
-            { key: 'attack', label: 'ATK', color: '#ef4444' },
-            { key: 'defense', label: 'DEF', color: '#3b82f6' },
-            { key: 'star', label: 'STR', color: '#eab308' },
-          ].map(({ key, label, color }) => (
-            <div key={key} className="flex items-center gap-2">
-              <span className="text-[9px] text-gray-500 w-5 shrink-0">{label}</span>
-              <div className="flex-1 rounded-full overflow-hidden" style={{ height: '4px', background: 'rgba(0,0,0,0.4)' }}>
-                <div className="h-full rounded-full stat-bar" style={{ width: `${card[key]}%`, background: color }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: sm ? '5px' : '7px' }}>
+          {STAT_CONFIG.map(({ key, label, color, bg }) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                fontSize: '8px',
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                color: color,
+                width: sm ? '18px' : '20px',
+                flexShrink: 0,
+                opacity: 0.8,
+              }}>
+                {label}
+              </span>
+              <div className="stat-bar-track" style={{ flex: 1 }}>
+                <div
+                  className="stat-bar-fill"
+                  style={{
+                    width: `${card[key]}%`,
+                    background: `linear-gradient(90deg, ${color}88, ${color})`,
+                  }}
+                />
               </div>
-              <span className={`text-[11px] font-bold w-6 text-right ${card.special === '100Club' && card[key] >= 100 ? 'text-yellow-400' : 'text-white'}`}>
+              <span style={{
+                fontSize: sm ? '10px' : '12px',
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 800,
+                color: card.special === '100Club' && card[key] >= 100 ? '#ffd700' : '#fff',
+                width: sm ? '22px' : '26px',
+                textAlign: 'right',
+                flexShrink: 0,
+              }}>
                 {card[key]}
               </span>
             </div>
@@ -80,9 +181,22 @@ export default function CardDisplay({ card, size = 'md', selected, onClick, high
         </div>
       </div>
 
-      {/* Big rating watermark */}
+      {/* Watermark rating */}
       {!sm && (
-        <div className="absolute bottom-2 right-3 font-display text-4xl opacity-10 text-white select-none">
+        <div style={{
+          position: 'absolute',
+          bottom: 10,
+          right: 12,
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 900,
+          fontSize: '52px',
+          opacity: 0.06,
+          color: '#ffffff',
+          lineHeight: 1,
+          pointerEvents: 'none',
+          zIndex: 1,
+          letterSpacing: '-0.02em',
+        }}>
           {card.star}
         </div>
       )}
