@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import CardDisplay from './CardDisplay';
+import CardDisplay from './carddisplay';
 import { useGame } from '../hooks/useGame';
 
 const STATS = [
