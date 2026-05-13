@@ -33,11 +33,13 @@ export default function CardScanner({ onCardFound }) {
   const { scanImage, scanning, progress } = useOCR();
   const addCard = useStore(s => s.addCard);
 
-  // Set srcObject after React updates the DOM
   useEffect(() => {
     if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(() => {});
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play().catch(console.error);
+      };
     }
   }, [stream]);
 
@@ -77,11 +79,9 @@ export default function CardScanner({ onCardFound }) {
     setCapturedImage(dataUrl);
     setMatchedCard(null);
     setStatus('scanning');
-
     const text = await scanImage(dataUrl);
     setStatus('matching');
     let card = await matchCardFromText(text);
-
     if (!card) {
       const stats = extractStatsFromText(text);
       card = makeUnknownCard(text, stats);
@@ -111,63 +111,100 @@ export default function CardScanner({ onCardFound }) {
 
   return (
     <div className="flex flex-col items-center gap-5 w-full">
-<div className="relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl"
-  style={{ aspectRatio: '3/4', background: '#07090f', border: '1px solid var(--border)' }}>
 
-  {/* Video always visible — never display:none */}
-  <video
-    ref={videoRef}
-    autoPlay
-    playsInline
-    muted
-    className="absolute inset-0 w-full h-full object-cover"
-  />
+      {/* Viewfinder */}
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: '320px',
+        height: '420px',
+        background: '#07090f',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        border: '1px solid var(--border)',
+      }}>
+        {/* Video — always block, never hidden */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
 
-  {/* Placeholder shown on top when camera is off */}
-  {!cameraOn && !capturedImage && (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-600"
-      style={{ background: '#07090f', zIndex: 10 }}>
-      <div className="text-6xl">📷</div>
-      <p className="text-sm">Tap Start Camera below</p>
-    </div>
-  )}
+        {/* Placeholder when off */}
+        {!cameraOn && !capturedImage && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 10,
+            background: '#07090f',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: '12px',
+            color: '#4a5568',
+          }}>
+            <div style={{ fontSize: '56px' }}>📷</div>
+            <p style={{ fontSize: '14px' }}>Tap Start Camera below</p>
+          </div>
+        )}
 
-  {/* Captured image shown on top of video */}
-  {capturedImage && (
-    <img src={capturedImage} alt="captured"
-      className="absolute inset-0 w-full h-full object-cover"
-      style={{ zIndex: 10 }} />
-  )}
+        {/* Captured image */}
+        {capturedImage && (
+          <img src={capturedImage} alt="captured" style={{
+            position: 'absolute', inset: 0, zIndex: 10,
+            width: '100%', height: '100%', objectFit: 'cover',
+          }} />
+        )}
 
-  {/* Gold frame guide */}
-  {cameraOn && !capturedImage && (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 5 }}>
-      <div className="w-48 h-64 rounded-xl" style={{
-        border: '2px solid #FFD700',
-        boxShadow: '0 0 0 9999px rgba(0,0,0,0.45), 0 0 20px rgba(255,215,0,0.3)'
-      }} />
-    </div>
-  )}
+        {/* Gold frame */}
+        {cameraOn && !capturedImage && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none',
+          }}>
+            <div style={{
+              width: '180px', height: '240px', borderRadius: '12px',
+              border: '2px solid #FFD700',
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+            }} />
+          </div>
+        )}
 
-  {/* Scanning overlay */}
-  {scanning && (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"
-      style={{ background: 'rgba(7,9,15,0.85)', zIndex: 20 }}>
-      <p className="text-yellow-400 font-bold text-xl font-display tracking-wider">SCANNING {progress}%</p>
-      <div className="w-52 rounded-full overflow-hidden" style={{ height: '4px', background: 'var(--border)' }}>
-        <div className="h-full bg-yellow-400 transition-all duration-300" style={{ width: `${progress}%` }} />
+        {/* Scanning overlay */}
+        {scanning && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 20,
+            background: 'rgba(7,9,15,0.88)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: '16px',
+          }}>
+            <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '18px' }}>
+              SCANNING {progress}%
+            </p>
+            <div style={{ width: '200px', height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+              <div style={{ width: `${progress}%`, height: '100%', background: '#FFD700', transition: 'width 0.3s' }} />
+            </div>
+          </div>
+        )}
+
+        {status === 'matching' && !scanning && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 20,
+            background: 'rgba(7,9,15,0.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <p style={{ color: '#60a5fa', fontSize: '22px', fontWeight: 'bold' }}>MATCHING...</p>
+          </div>
+        )}
       </div>
-    </div>
-  )}
 
-  {status === 'matching' && !scanning && (
-    <div className="absolute inset-0 flex items-center justify-center"
-      style={{ background: 'rgba(7,9,15,0.85)', zIndex: 20 }}>
-      <p className="text-blue-400 font-display text-2xl tracking-wider animate-pulse">MATCHING...</p>
-    </div>
-  )}
-</div>
-
+      {/* Result */}
       {matchedCard && (
         <div className="flex flex-col items-center gap-4 w-full">
           <p className={`font-medium text-sm ${status === 'found_unknown' ? 'text-yellow-400' : 'text-green-400'}`}>
@@ -189,6 +226,7 @@ export default function CardScanner({ onCardFound }) {
         </div>
       )}
 
+      {/* Controls */}
       {!capturedImage && (
         <div className="flex gap-3">
           {!cameraOn ? (
