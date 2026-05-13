@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import CardScanner from '../components/CardScanner';
-import CardDisplay from '../components/CardDisplay';
+import CardScanner from '../components/cardscanner';
+import CardDisplay from '../components/carddisplay';
 import { useStore } from '../store/gameStore';
 
 export default function Scanner() {
