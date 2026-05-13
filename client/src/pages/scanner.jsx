@@ -8,27 +8,66 @@ export default function Scanner() {
   const { collection } = useStore();
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-10">
-      <div className="mb-8">
-        <h1 className="font-display text-4xl mb-1" style={{ color: 'var(--gold)' }}>SCAN A CARD</h1>
-        <p className="text-gray-500 text-sm">Hold your Match Attax card flat, well-lit, inside the gold frame.</p>
+    <div className="page-content" style={{ maxWidth: 480, margin: '0 auto', padding: '24px 20px 0' }}>
+
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 900,
+          fontSize: 40,
+          color: '#fff',
+          letterSpacing: '-0.01em',
+          lineHeight: 1,
+        }}>
+          SCAN A <span style={{ color: 'var(--lime)' }}>CARD</span>
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 6, fontFamily: "'Barlow', sans-serif" }}>
+          Hold your card flat and well-lit inside the gold frame
+        </p>
       </div>
 
       <CardScanner onCardFound={setLastAdded} />
 
       {lastAdded && (
-        <div className="mt-8 p-5 rounded-2xl text-center"
-          style={{ background: 'var(--surface)', border: '1px solid #1a3a1a' }}>
-          <p className="text-green-400 font-bold text-sm mb-4">Added to collection!</p>
-          <div className="flex justify-center">
+        <div style={{
+          marginTop: 20,
+          background: 'var(--surface)',
+          border: '1px solid rgba(74,255,128,0.2)',
+          borderRadius: 18,
+          padding: 20,
+          textAlign: 'center',
+          animation: 'fadeUp 0.3s ease forwards',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
+            <span style={{ color: '#4aff80', fontSize: 16 }}>✓</span>
+            <span style={{
+              color: '#4aff80',
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontWeight: 700,
+              fontSize: 14,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+            }}>Added to collection!</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
             <CardDisplay card={lastAdded} size="sm" />
           </div>
         </div>
       )}
 
-      <p className="mt-8 text-center text-gray-700 text-xs">
-        {collection.length} card{collection.length !== 1 ? 's' : ''} in collection
-      </p>
+      <div style={{
+        marginTop: 16,
+        textAlign: 'center',
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontWeight: 600,
+        fontSize: 12,
+        color: 'var(--muted)',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+      }}>
+        {collection.length} card{collection.length !== 1 ? 's' : ''} collected
+      </div>
     </div>
   );
 }
