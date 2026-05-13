@@ -1,8 +1,25 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useOCR } from '../hooks/useOCR';
-import { matchCardFromText } from '../utils/cardMatcher';
+import { matchCardFromText, extractStatsFromText } from '../utils/cardMatcher';
 import CardDisplay from './carddisplay';
 import { useStore } from '../store/gameStore';
+
+function makeUnknownCard(rawText, stats) {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 40);
+  const skip = /^(attack|defense|defence|star|rating|topps|match attax|\d+)$/i;
+  const name = lines.find(l => !skip.test(l)) || 'Unknown Player';
+  return {
+    id: `custom-${Date.now()}`,
+    name,
+    club: 'Unknown Club',
+    nation: '??',
+    position: 'ST',
+    attack: stats?.attack ?? 75,
+    defense: stats?.defense ?? 60,
+    star: stats?.star ?? 70,
+    special: null,
+  };
+}
 
 export default function CardScanner({ onCardFound }) {
   const videoRef = useRef(null);
@@ -13,7 +30,6 @@ export default function CardScanner({ onCardFound }) {
   const [matchedCard, setMatchedCard] = useState(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('idle');
-
   const { scanImage, scanning, progress } = useOCR();
   const addCard = useStore(s => s.addCard);
 
@@ -28,18 +44,23 @@ export default function CardScanner({ onCardFound }) {
       } catch {
         s = await navigator.mediaDevices.getUserMedia({ video: true });
       }
-      const video = videoRef.current;
-      video.srcObject = s;
-      await video.play();
       setStream(s);
       setCameraOn(true);
+      // Set srcObject after state update in next tick
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 0);
     } catch (e) {
-      setError('Camera access denied. Please allow camera permissions and try again.');
+      setError('Camera access denied — please allow camera permissions.');
     }
   }, []);
 
   const stopCamera = useCallback(() => {
     if (stream) stream.getTracks().forEach(t => t.stop());
+    if (videoRef.current) videoRef.current.srcObject = null;
     setStream(null);
     setCameraOn(false);
   }, [stream]);
@@ -48,18 +69,28 @@ export default function CardScanner({ onCardFound }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
     ctx.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     setCapturedImage(dataUrl);
     setMatchedCard(null);
     setStatus('scanning');
+
     const text = await scanImage(dataUrl);
     setStatus('matching');
-    const card = await matchCardFromText(text);
-    if (card) { setMatchedCard(card); setStatus('found'); }
-    else setStatus('not_found');
+    let card = await matchCardFromText(text);
+
+    if (!card) {
+      // Not in DB — build from OCR data and add anyway
+      const stats = extractStatsFromText(text);
+      card = makeUnknownCard(text, stats);
+      setMatchedCard(card);
+      setStatus('found_unknown');
+    } else {
+      setMatchedCard(card);
+      setStatus('found');
+    }
   }, [scanImage]);
 
   const keepCard = () => {
@@ -75,42 +106,55 @@ export default function CardScanner({ onCardFound }) {
 
   return (
     <div className="flex flex-col items-center gap-5 w-full">
-      {/* Viewfinder */}
-      <div className="relative w-full max-w-sm aspect-[3/4] bg-gray-900 rounded-2xl overflow-hidden border border-gray-700 shadow-xl">
-        <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+      {/* Viewfinder — video always mounted so ref is always valid */}
+      <div className="relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl"
+        style={{ aspectRatio: '3/4', background: '#07090f', border: '1px solid var(--border)' }}>
+
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+          style={{ display: cameraOn && !capturedImage ? 'block' : 'none' }}
+        />
+
+        {capturedImage && (
+          <img src={capturedImage} alt="captured" className="w-full h-full object-cover" />
+        )}
 
         {!cameraOn && !capturedImage && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500">
-            <div className="text-5xl">📷</div>
-            <p className="text-sm">Tap "Start Camera" below</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-600">
+            <div className="text-6xl">📷</div>
+            <p className="text-sm">Tap Start Camera below</p>
           </div>
         )}
 
+        {/* Card guide overlay */}
         {cameraOn && !capturedImage && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-48 h-64 rounded-xl" style={{
-              boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
-              border: '2px solid #FFD700'
+              border: '2px solid #FFD700',
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.5), 0 0 20px rgba(255,215,0,0.3)'
             }} />
           </div>
         )}
 
-        {capturedImage && (
-          <img src={capturedImage} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
-        )}
-
+        {/* Scanning overlay */}
         {scanning && (
-          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-4">
-            <p className="text-yellow-400 font-bold text-lg">Scanning... {progress}%</p>
-            <div className="w-48 bg-gray-700 rounded-full h-2">
-              <div className="bg-yellow-400 h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+            style={{ background: 'rgba(7,9,15,0.85)' }}>
+            <p className="text-yellow-400 font-bold text-xl font-display tracking-wider">SCANNING {progress}%</p>
+            <div className="w-52 rounded-full overflow-hidden" style={{ height: '4px', background: 'var(--border)' }}>
+              <div className="h-full bg-yellow-400 transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
           </div>
         )}
 
         {status === 'matching' && !scanning && (
-          <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-            <p className="text-blue-400 font-bold animate-pulse text-lg">Matching card...</p>
+          <div className="absolute inset-0 flex items-center justify-center"
+            style={{ background: 'rgba(7,9,15,0.85)' }}>
+            <p className="text-blue-400 font-display text-2xl tracking-wider animate-pulse">MATCHING...</p>
           </div>
         )}
       </div>
@@ -118,13 +162,19 @@ export default function CardScanner({ onCardFound }) {
       {/* Result */}
       {matchedCard && (
         <div className="flex flex-col items-center gap-4 w-full">
-          <p className="text-green-400 font-bold">✓ Card identified!</p>
+          <p className={`font-medium text-sm ${status === 'found_unknown' ? 'text-yellow-400' : 'text-green-400'}`}>
+            {status === 'found_unknown' ? '⚠ Not in database — added as custom card' : '✓ Card identified!'}
+          </p>
           <CardDisplay card={matchedCard} />
           <div className="flex gap-3">
-            <button onClick={keepCard} className="px-6 py-2.5 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition">
+            <button onClick={keepCard}
+              className="px-6 py-2.5 font-bold rounded-xl text-black text-sm transition hover:scale-105"
+              style={{ background: 'var(--gold)' }}>
               Add to Collection
             </button>
-            <button onClick={retry} className="px-6 py-2.5 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition">
+            <button onClick={retry}
+              className="px-6 py-2.5 rounded-xl text-gray-400 text-sm transition hover:text-white"
+              style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
               Retry
             </button>
           </div>
@@ -133,8 +183,10 @@ export default function CardScanner({ onCardFound }) {
 
       {status === 'not_found' && (
         <div className="text-center">
-          <p className="text-red-400 text-sm mb-3">Couldn't identify the card. Try better lighting.</p>
-          <button onClick={retry} className="px-5 py-2 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition text-sm">
+          <p className="text-red-400 text-sm mb-3">Couldn't scan. Try better lighting and hold steady.</p>
+          <button onClick={retry}
+            className="px-5 py-2 rounded-xl text-gray-400 text-sm hover:text-white transition"
+            style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
             Try again
           </button>
         </div>
@@ -144,15 +196,21 @@ export default function CardScanner({ onCardFound }) {
       {!capturedImage && (
         <div className="flex gap-3">
           {!cameraOn ? (
-            <button onClick={startCamera} className="px-7 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition text-sm shadow-lg">
+            <button onClick={startCamera}
+              className="px-8 py-3 font-bold rounded-xl text-black text-sm transition hover:scale-105 shadow-lg"
+              style={{ background: 'var(--gold)' }}>
               Start Camera
             </button>
           ) : (
             <>
-              <button onClick={capture} className="px-7 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition text-sm shadow-lg">
+              <button onClick={capture}
+                className="px-8 py-3 font-bold rounded-xl text-black text-sm transition hover:scale-105 shadow-lg"
+                style={{ background: 'var(--gold)' }}>
                 ⊙ Scan Card
               </button>
-              <button onClick={stopCamera} className="px-5 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition text-sm">
+              <button onClick={stopCamera}
+                className="px-5 py-3 rounded-xl text-gray-400 text-sm hover:text-white transition"
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
                 Stop
               </button>
             </>
