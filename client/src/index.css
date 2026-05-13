@@ -3,40 +3,29 @@
 @tailwind utilities;
 
 body {
-  background: #0d1117;
+  background: #080c11;
   color: #f0f6fc;
   font-family: 'Segoe UI', system-ui, sans-serif;
-}
-
-/* Holographic card shimmer */
-@keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  min-height: 100vh;
 }
 
 .card-gold {
   background: linear-gradient(135deg, #1a0a00, #3d2000, #1a0a00);
   border: 2px solid #FFD700;
-  box-shadow: 0 0 20px rgba(255,215,0,0.4);
+  box-shadow: 0 0 24px rgba(255,215,0,0.3);
 }
-
 .card-motm {
   background: linear-gradient(135deg, #001a3d, #003d99, #001a3d);
   border: 2px solid #00aaff;
-  box-shadow: 0 0 20px rgba(0,170,255,0.4);
+  box-shadow: 0 0 24px rgba(0,170,255,0.3);
 }
-
 .card-hattrick {
   background: linear-gradient(135deg, #1a001a, #4d0066, #1a001a);
   border: 2px solid #cc00ff;
-  box-shadow: 0 0 20px rgba(204,0,255,0.4);
+  box-shadow: 0 0 24px rgba(204,0,255,0.3);
 }
-
 .card-standard {
   background: linear-gradient(135deg, #0d1117, #161b22, #0d1117);
   border: 2px solid #30363d;
 }
-
-.stat-bar {
-  transition: width 0.6s ease;
-}
+.stat-bar { transition: width 0.6s ease; }
