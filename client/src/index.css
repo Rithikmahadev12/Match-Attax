@@ -2,30 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --gold: #FFD700;
+  --gold-dim: #b8960c;
+  --bg: #07090f;
+  --surface: #0f1420;
+  --surface2: #161d2e;
+  --border: #1e2a3a;
+  --text: #e8edf5;
+  --muted: #4a5568;
+}
+
+* { box-sizing: border-box; }
+
 body {
-  background: #080c11;
-  color: #f0f6fc;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
   min-height: 100vh;
 }
 
+.font-display { font-family: 'Bebas Neue', sans-serif; }
+
+/* Card types */
 .card-gold {
-  background: linear-gradient(135deg, #1a0a00, #3d2000, #1a0a00);
-  border: 2px solid #FFD700;
-  box-shadow: 0 0 24px rgba(255,215,0,0.3);
+  background: linear-gradient(145deg, #1c0e00, #3d2200, #1c0e00);
+  border: 1.5px solid #FFD700;
+  box-shadow: 0 0 30px rgba(255,215,0,0.2), inset 0 1px 0 rgba(255,215,0,0.1);
 }
 .card-motm {
-  background: linear-gradient(135deg, #001a3d, #003d99, #001a3d);
-  border: 2px solid #00aaff;
-  box-shadow: 0 0 24px rgba(0,170,255,0.3);
+  background: linear-gradient(145deg, #00112b, #002d7a, #00112b);
+  border: 1.5px solid #3b9eff;
+  box-shadow: 0 0 30px rgba(59,158,255,0.2), inset 0 1px 0 rgba(59,158,255,0.1);
 }
 .card-hattrick {
-  background: linear-gradient(135deg, #1a001a, #4d0066, #1a001a);
-  border: 2px solid #cc00ff;
-  box-shadow: 0 0 24px rgba(204,0,255,0.3);
+  background: linear-gradient(145deg, #130020, #420060, #130020);
+  border: 1.5px solid #c800ff;
+  box-shadow: 0 0 30px rgba(200,0,255,0.2), inset 0 1px 0 rgba(200,0,255,0.1);
 }
 .card-standard {
-  background: linear-gradient(135deg, #0d1117, #161b22, #0d1117);
-  border: 2px solid #30363d;
+  background: linear-gradient(145deg, #0c1120, #111827, #0c1120);
+  border: 1.5px solid #1e2a3a;
 }
-.stat-bar { transition: width 0.6s ease; }
+
+.stat-bar { transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
