@@ -33,26 +33,27 @@ export default function CardScanner({ onCardFound }) {
   const { scanImage, scanning, progress } = useOCR();
   const addCard = useStore(s => s.addCard);
 
+  // Set srcObject after React updates the DOM
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stream]);
+
   const startCamera = useCallback(async () => {
     setError('');
     try {
       let s;
       try {
         s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          video: { facingMode: { ideal: 'environment' } }
         });
       } catch {
         s = await navigator.mediaDevices.getUserMedia({ video: true });
       }
       setStream(s);
       setCameraOn(true);
-      // Set srcObject after state update in next tick
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 0);
     } catch (e) {
       setError('Camera access denied — please allow camera permissions.');
     }
@@ -82,34 +83,38 @@ export default function CardScanner({ onCardFound }) {
     let card = await matchCardFromText(text);
 
     if (!card) {
-      // Not in DB — build from OCR data and add anyway
       const stats = extractStatsFromText(text);
       card = makeUnknownCard(text, stats);
-      setMatchedCard(card);
       setStatus('found_unknown');
     } else {
-      setMatchedCard(card);
       setStatus('found');
     }
+    setMatchedCard(card);
   }, [scanImage]);
 
   const keepCard = () => {
     if (!matchedCard) return;
     addCard(matchedCard);
     onCardFound?.(matchedCard);
-    setCapturedImage(null); setMatchedCard(null); setStatus('idle');
+    setCapturedImage(null);
+    setMatchedCard(null);
+    setStatus('idle');
   };
 
-  const retry = () => { setCapturedImage(null); setMatchedCard(null); setStatus('idle'); };
+  const retry = () => {
+    setCapturedImage(null);
+    setMatchedCard(null);
+    setStatus('idle');
+  };
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
   return (
     <div className="flex flex-col items-center gap-5 w-full">
-      {/* Viewfinder — video always mounted so ref is always valid */}
       <div className="relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl"
         style={{ aspectRatio: '3/4', background: '#07090f', border: '1px solid var(--border)' }}>
 
+        {/* Video always in DOM so ref is always valid */}
         <video
           ref={videoRef}
           autoPlay
@@ -130,7 +135,6 @@ export default function CardScanner({ onCardFound }) {
           </div>
         )}
 
-        {/* Card guide overlay */}
         {cameraOn && !capturedImage && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-48 h-64 rounded-xl" style={{
@@ -140,7 +144,6 @@ export default function CardScanner({ onCardFound }) {
           </div>
         )}
 
-        {/* Scanning overlay */}
         {scanning && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"
             style={{ background: 'rgba(7,9,15,0.85)' }}>
@@ -159,7 +162,6 @@ export default function CardScanner({ onCardFound }) {
         )}
       </div>
 
-      {/* Result */}
       {matchedCard && (
         <div className="flex flex-col items-center gap-4 w-full">
           <p className={`font-medium text-sm ${status === 'found_unknown' ? 'text-yellow-400' : 'text-green-400'}`}>
@@ -181,18 +183,6 @@ export default function CardScanner({ onCardFound }) {
         </div>
       )}
 
-      {status === 'not_found' && (
-        <div className="text-center">
-          <p className="text-red-400 text-sm mb-3">Couldn't scan. Try better lighting and hold steady.</p>
-          <button onClick={retry}
-            className="px-5 py-2 rounded-xl text-gray-400 text-sm hover:text-white transition"
-            style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-            Try again
-          </button>
-        </div>
-      )}
-
-      {/* Controls */}
       {!capturedImage && (
         <div className="flex gap-3">
           {!cameraOn ? (
