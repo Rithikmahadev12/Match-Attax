@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useOCR } from '../hooks/useOCR';
 import { matchCardFromText } from '../utils/cardMatcher';
-import CardDisplay from './CardDisplay';
+import CardDisplay from './carddisplay';
 import { useStore } from '../store/gameStore';
 
 export default function CardScanner({ onCardFound }) {
