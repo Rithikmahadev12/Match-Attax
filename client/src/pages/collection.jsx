@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import CardDisplay from '../components/CardDisplay';
+import CardDisplay from '../components/carddisplay';
 import { useStore } from '../store/gameStore';
 
 export default function Collection() {
