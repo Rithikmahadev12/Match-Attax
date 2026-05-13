@@ -1,9 +1,8 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Navbar from './components/Navbar';
-import Home from './pages/Home';
-import Scanner from './pages/Scanner';
-import Collection from './pages/Collection';
-import Game from './pages/Game';
+import Navbar from './components/navbar';
+import Home from './pages/home';
+import Scanner from './pages/scanner';
+import Collection from './pages/collection';
+import Game from './pages/game';
 
 export default function App() {
   return (
