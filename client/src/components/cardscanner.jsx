@@ -33,33 +33,26 @@ export default function CardScanner({ onCardFound }) {
   const { scanImage, scanning, progress } = useOCR();
   const addCard = useStore(s => s.addCard);
 
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      const video = videoRef.current;
-      video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        video.play().catch(console.error);
-      };
-    }
-  }, [stream]);
 
-  const startCamera = useCallback(async () => {
-    setError('');
+const startCamera = useCallback(async () => {
+  setError('');
+  try {
+    let s;
     try {
-      let s;
-      try {
-        s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } }
-        });
-      } catch {
-        s = await navigator.mediaDevices.getUserMedia({ video: true });
-      }
-      setStream(s);
-      setCameraOn(true);
-    } catch (e) {
-      setError('Camera access denied — please allow camera permissions.');
+      s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+    } catch {
+      s = await navigator.mediaDevices.getUserMedia({ video: true });
     }
-  }, []);
+    // Set directly on the video element BEFORE any state updates
+    const video = videoRef.current;
+    video.srcObject = s;
+    await video.play();
+    setStream(s);
+    setCameraOn(true);
+  } catch (e) {
+    setError('Camera access denied — please allow camera permissions.');
+  }
+}, []);
 
   const stopCamera = useCallback(() => {
     if (stream) stream.getTracks().forEach(t => t.stop());
