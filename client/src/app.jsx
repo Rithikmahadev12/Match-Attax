@@ -1,5 +1,6 @@
 import Navbar from './components/navbar';
 import Home from './pages/home';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Scanner from './pages/scanner';
 import Collection from './pages/collection';
 import Game from './pages/game';
