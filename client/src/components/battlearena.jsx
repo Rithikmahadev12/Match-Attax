@@ -4,9 +4,9 @@ import CardDisplay from './carddisplay';
 import { useGame } from '../hooks/useGame';
 
 const STATS = [
-  { key: 'attack', label: '⚔️ Attack', color: 'bg-red-600 hover:bg-red-500' },
-  { key: 'defense', label: '🛡️ Defense', color: 'bg-blue-600 hover:bg-blue-500' },
-  { key: 'star', label: '⭐ Star', color: 'bg-yellow-500 hover:bg-yellow-400 text-black' },
+  { key: 'attack',  label: 'ATTACK',  icon: '⚔️', color: '#ff5c5c', border: 'rgba(255,92,92,0.3)' },
+  { key: 'defense', label: 'DEFENSE', icon: '🛡️', color: '#4aabff', border: 'rgba(74,171,255,0.3)' },
+  { key: 'star',    label: 'STAR',    icon: '⭐', color: '#ffd700', border: 'rgba(255,215,0,0.3)' },
 ];
 
 export default function BattleArena() {
@@ -31,116 +31,162 @@ export default function BattleArena() {
     }
   };
 
-  const outcomeBanner = () => {
+  const getOutcome = () => {
     if (!lastResult) return null;
-    if (lastResult.outcome === 'player') return { text: '🏆 YOU WIN!', color: 'text-green-400' };
-    if (lastResult.outcome === 'cpu') return { text: '💀 CPU WINS', color: 'text-red-400' };
-    return { text: '🤝 DRAW', color: 'text-yellow-400' };
+    if (lastResult.outcome === 'player') return { text: 'YOU WIN THIS ROUND', color: '#4aff80', icon: '🏆' };
+    if (lastResult.outcome === 'cpu')    return { text: 'CPU TAKES IT', color: '#ff5c5c', icon: '💀' };
+    return { text: 'DRAW', color: '#ffd700', icon: '🤝' };
   };
 
-  const banner = outcomeBanner();
+  const outcome = getOutcome();
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full">
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, width: '100%' }}>
+
       {/* Score bar */}
-      <div className="flex gap-8 text-sm font-bold">
-        <span className="text-green-400">YOU: {gameState.playerWon.length} cards</span>
-        <span className="text-gray-500">Round {gameState.round}</span>
-        <span className="text-red-400">CPU: {gameState.cpuWon.length} cards</span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0,
+        background: 'var(--surface)',
+        border: '1px solid var(--border-dim)',
+        borderRadius: 14,
+        overflow: 'hidden',
+        width: '100%',
+        maxWidth: 400,
+      }}>
+        <div style={{ flex: 1, padding: '12px 16px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 24, color: '#4aff80' }}>
+            {gameState.playerWon.length}
+          </div>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 10, color: 'var(--muted)', letterSpacing: '0.08em' }}>YOU</div>
+        </div>
+        <div style={{ width: '1px', background: 'var(--border-dim)', alignSelf: 'stretch' }} />
+        <div style={{ flex: 1, padding: '12px 0', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em' }}>ROUND</div>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, color: 'var(--lime)' }}>{gameState.round}</div>
+        </div>
+        <div style={{ width: '1px', background: 'var(--border-dim)', alignSelf: 'stretch' }} />
+        <div style={{ flex: 1, padding: '12px 16px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 24, color: '#ff5c5c' }}>
+            {gameState.cpuWon.length}
+          </div>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 10, color: 'var(--muted)', letterSpacing: '0.08em' }}>CPU</div>
+        </div>
       </div>
 
-      {/* Cards side by side */}
-      <div className="flex gap-8 items-center flex-wrap justify-center">
-        {/* Player card */}
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-xs text-gray-400 font-medium">YOUR CARD</span>
+      {/* Cards */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {/* Player */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 10, color: '#4aff80', letterSpacing: '0.12em' }}>YOUR CARD</span>
           <AnimatePresence mode="wait">
-            <motion.div
-              key={`player-${animKey}`}
-              initial={{ rotateY: 90, opacity: 0 }}
-              animate={{ rotateY: 0, opacity: 1 }}
-              transition={{ duration: 0.35 }}
-            >
-              <CardDisplay
-                card={playerCard}
-                highlight={lastResult?.outcome === 'player' ? 'win' : lastResult?.outcome === 'cpu' ? 'lose' : undefined}
-              />
+            <motion.div key={`p-${animKey}`} initial={{ x: -40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
+              <CardDisplay card={playerCard} highlight={lastResult?.outcome === 'player' ? 'win' : lastResult?.outcome === 'cpu' ? 'lose' : undefined} />
             </motion.div>
           </AnimatePresence>
-          <span className="text-xs text-gray-500">{gameState.playerDeck.length} cards left</span>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, color: 'var(--muted)' }}>{gameState.playerDeck.length} left</span>
         </div>
 
-        {/* VS / outcome */}
-        <div className="flex flex-col items-center gap-2">
-          {banner ? (
-            <motion.div
-              key={animKey}
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className={`text-2xl font-display font-bold ${banner.color}`}
-            >
-              {banner.text}
+        {/* Middle */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
+          {outcome ? (
+            <motion.div key={animKey} initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 4 }}>{outcome.icon}</div>
+              <div style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 900,
+                fontSize: 13,
+                color: outcome.color,
+                letterSpacing: '0.06em',
+                textAlign: 'center',
+                lineHeight: 1.2,
+              }}>{outcome.text}</div>
+              {lastResult && (
+                <div style={{ marginTop: 8, textAlign: 'center' }}>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{lastResult.stat}</div>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 14, color: '#fff', marginTop: 2 }}>
+                    <span style={{ color: '#4aff80' }}>{lastResult.playerVal}</span>
+                    <span style={{ color: 'var(--muted)' }}> vs </span>
+                    <span style={{ color: '#ff5c5c' }}>{lastResult.cpuVal}</span>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ) : (
-            <div className="text-2xl font-display text-gray-500">VS</div>
-          )}
-          {lastResult && (
-            <div className="text-xs text-gray-400 text-center">
-              <span className="uppercase text-gray-500">{lastResult.stat}</span>
-              <br />
-              {lastResult.playerVal} vs {lastResult.cpuVal}
-            </div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 22, color: 'var(--muted)' }}>VS</div>
           )}
         </div>
 
-        {/* CPU card */}
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-xs text-gray-400 font-medium">CPU CARD</span>
+        {/* CPU */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 10, color: '#ff5c5c', letterSpacing: '0.12em' }}>CPU CARD</span>
           <AnimatePresence mode="wait">
-            <motion.div
-              key={`cpu-${animKey}`}
-              initial={{ rotateY: -90, opacity: 0 }}
-              animate={{ rotateY: 0, opacity: 1 }}
-              transition={{ duration: 0.35 }}
-            >
-              <CardDisplay
-                card={cpuCard}
-                highlight={lastResult?.outcome === 'cpu' ? 'win' : lastResult?.outcome === 'player' ? 'lose' : undefined}
-              />
+            <motion.div key={`c-${animKey}`} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
+              <CardDisplay card={cpuCard} highlight={lastResult?.outcome === 'cpu' ? 'win' : lastResult?.outcome === 'player' ? 'lose' : undefined} />
             </motion.div>
           </AnimatePresence>
-          <span className="text-xs text-gray-500">{gameState.cpuDeck.length} cards left</span>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, color: 'var(--muted)' }}>{gameState.cpuDeck.length} left</span>
         </div>
       </div>
 
-      {/* Stat buttons */}
+      {/* Stat pick */}
       {gameState.status === 'playing' && (
-        <div className="flex flex-col items-center gap-3">
+        <div style={{ width: '100%', maxWidth: 400 }}>
           {isPlayerTurn ? (
-            <>
-              <p className="text-sm text-gray-400">Choose your stat to battle with:</p>
-              <div className="flex gap-3">
-                {STATS.map(({ key, label, color }) => (
+            <div>
+              <p style={{
+                textAlign: 'center',
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 700,
+                fontSize: 12,
+                color: 'var(--muted)',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                marginBottom: 12,
+              }}>Choose your stat</p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {STATS.map(({ key, label, icon, color, border }) => (
                   <button
                     key={key}
                     onClick={() => handleStat(key)}
                     disabled={busy}
-                    className={`px-5 py-2.5 rounded-lg font-bold text-sm transition ${color} disabled:opacity-40`}
+                    style={{
+                      flex: 1,
+                      padding: '14px 8px',
+                      background: 'var(--surface)',
+                      border: `1px solid ${border}`,
+                      borderRadius: 14,
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                      opacity: busy ? 0.4 : 1,
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onMouseEnter={e => { if (!busy) e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.transform = 'none'; }}
                   >
-                    {label}
+                    <span style={{ fontSize: 22 }}>{icon}</span>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 13, color, letterSpacing: '0.08em' }}>{label}</span>
                   </button>
                 ))}
               </div>
-            </>
+            </div>
           ) : (
-            <div className="flex flex-col items-center gap-3">
-              <p className="text-sm text-gray-400">CPU is choosing...</p>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
+                CPU IS THINKING...
+              </p>
               <button
-                onClick={() => handleStat('attack')} // ignored - CPU picks its own stat
+                onClick={() => handleStat('attack')}
                 disabled={busy}
-                className="px-6 py-2.5 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600 transition disabled:opacity-40"
+                className="btn-lime"
+                style={{ padding: '14px 32px', fontSize: 18, width: '100%' }}
               >
-                {busy ? 'Playing...' : 'Let CPU Play →'}
+                {busy ? 'PLAYING...' : 'LET CPU PLAY →'}
               </button>
             </div>
           )}
