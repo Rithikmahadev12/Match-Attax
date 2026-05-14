@@ -9,6 +9,7 @@ export default function Game() {
   const { collection } = useStore();
   const { gameState, startGame, endGame } = useGame();
   const [selectedIds, setSelectedIds] = useState([]);
+  const [playerDeck, setPlayerDeck] = useState([]);
   const [phase, setPhase] = useState('select');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,6 +27,7 @@ export default function Game() {
     setLoading(true); setError('');
     try {
       const deck = collection.filter(c => selectedIds.includes(c.id));
+      setPlayerDeck(deck);
       await startGame(deck);
       setPhase('battle');
     } catch (e) { setError(e.message); }
@@ -36,6 +38,7 @@ export default function Game() {
     await endGame();
     setPhase('select');
     setSelectedIds([]);
+    setPlayerDeck([]);
   };
 
   if (collection.length < 5 && phase === 'select') {
@@ -53,70 +56,30 @@ export default function Game() {
     );
   }
 
-  if (phase === 'battle' && gameState?.status === 'finished') {
-    const won = gameState.winner === 'player';
-    const drew = gameState.winner === 'draw';
-    return (
-      <div className="page-content" style={{ maxWidth: 480, margin: '0 auto', padding: '60px 20px 0', textAlign: 'center' }}>
-        <div style={{ fontSize: 72, marginBottom: 12, animation: 'float 3s ease-in-out infinite' }}>
-          {won ? '🏆' : drew ? '🤝' : '💀'}
-        </div>
-        <div style={{
-          fontFamily: "'Barlow Condensed', sans-serif",
-          fontWeight: 900,
-          fontSize: 52,
-          letterSpacing: '-0.01em',
-          color: won ? 'var(--lime)' : drew ? '#4aabff' : '#ff5c5c',
-          textShadow: won ? '0 0 40px var(--lime-glow-strong)' : 'none',
-          marginBottom: 20,
-        }}>
-          {won ? 'YOU WIN!' : drew ? 'DRAW!' : 'CPU WINS!'}
-        </div>
-
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 24,
-          marginBottom: 36,
-          background: 'var(--surface)',
-          border: '1px solid var(--border-dim)',
-          borderRadius: 16,
-          padding: '16px 32px',
-          maxWidth: 280,
-          margin: '0 auto 36px',
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, color: '#4aff80' }}>{gameState.playerWon.length}</div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em' }}>YOUR CARDS</div>
-          </div>
-          <div style={{ width: 1, background: 'var(--border-dim)' }} />
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, color: '#ff5c5c' }}>{gameState.cpuWon.length}</div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em' }}>CPU CARDS</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button onClick={handleRematch} className="btn-lime" style={{ padding: '14px 32px', fontSize: 18 }}>REMATCH</button>
-          <button onClick={() => { endGame(); navigate('/'); }} className="btn-ghost" style={{ padding: '14px 24px', fontSize: 18 }}>HOME</button>
-        </div>
-      </div>
-    );
-  }
-
   if (phase === 'battle' && gameState) {
     return (
       <div className="page-content" style={{ maxWidth: 600, margin: '0 auto', padding: '20px 16px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: 'var(--lime)' }}>BATTLE!</div>
-          <button onClick={handleRematch} style={{
-            background: 'none', border: '1px solid rgba(255,60,60,0.3)',
-            color: '#ff6060', cursor: 'pointer', borderRadius: 8,
-            padding: '6px 14px', fontSize: 11,
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: '0.06em',
-          }}>QUIT</button>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: 'var(--lime)' }}>
+            BATTLE!
+          </div>
+          <button
+            onClick={handleRematch}
+            style={{
+              background: 'none', border: '1px solid rgba(255,60,60,0.3)',
+              color: '#ff6060', cursor: 'pointer', borderRadius: 8,
+              padding: '6px 14px', fontSize: 11,
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: '0.06em',
+            }}
+          >
+            QUIT
+          </button>
         </div>
-        <BattleArena />
+        <BattleArena
+          playerDeck={playerDeck}
+          cpuDeck={gameState.cpuDeck || []}
+          onGameEnd={handleRematch}
+        />
       </div>
     );
   }
