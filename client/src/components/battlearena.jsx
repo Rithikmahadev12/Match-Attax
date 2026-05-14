@@ -88,11 +88,12 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
   const [flipping, setFlipping] = useState(true);
   const [coinResult, setCoinResult] = useState(null);
 
+  // Guard: ensure arrays are always arrays before mapping
   const [playerDeck, setPlayerDeck] = useState(() =>
-    (initialPlayerDeck || []).map(c => applyPowerUps(c, activePowerUps))
+    (Array.isArray(initialPlayerDeck) ? initialPlayerDeck : []).map(c => applyPowerUps(c, activePowerUps))
   );
   const [cpuDeck, setCpuDeck] = useState(() =>
-    (initialCpuDeck || []).map(c => applyPowerUps(c, activePowerUps))
+    (Array.isArray(initialCpuDeck) ? initialCpuDeck : []).map(c => applyPowerUps(c, activePowerUps))
   );
 
   // Cards played on board (shown face-up)
@@ -121,7 +122,7 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
   }, []);
 
   const cpuPickCard = (deck, role) => {
-    if (!deck.length) return null;
+    if (!deck || deck.length === 0) return null;
     if (Math.random() < 0.25) return deck[Math.floor(Math.random() * deck.length)];
     return [...deck].sort((a, b) =>
       role === 'atk' ? b.attack - a.attack : b.defense - a.defense
@@ -129,17 +130,21 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
   };
 
   const resolveRound = (playerCard, playerRole, cpuCard) => {
-    const cpuRole = playerRole === 'attack' ? 'defend' : 'attack';
-    const atk = playerRole === 'attack' ? playerCard.attack : cpuCard.attack;
-    const def = playerRole === 'attack' ? cpuCard.defense : playerCard.defense;
     const attackerIsPlayer = playerRole === 'attack';
+    const atk = attackerIsPlayer ? playerCard.attack : cpuCard.attack;
+    const def = attackerIsPlayer ? cpuCard.defense : playerCard.defense;
     const goal = atk > def;
 
-    // Remove from decks
-    setPlayerDeck(d => d.filter(c => c._id !== playerCard._id));
-    setCpuDeck(d => d.filter(c => c._id !== cpuCard._id));
+    // Snapshot the next deck sizes before any state updates
+    const nextPlayerDeck = playerDeck.filter(c => c._id !== playerCard._id);
+    const nextCpuDeck = cpuDeck.filter(c => c._id !== cpuCard._id);
 
-    // Add to boards (face-up now)
+    // Update decks
+    setPlayerDeck(nextPlayerDeck);
+    setCpuDeck(nextCpuDeck);
+
+    // Add to boards
+    const cpuRole = attackerIsPlayer ? 'defend' : 'attack';
     setPlayerBoard(b => [...b, { card: playerCard, role: playerRole, scored: goal && attackerIsPlayer }]);
     setCpuBoard(b => [...b, { card: cpuCard, role: cpuRole, scored: goal && !attackerIsPlayer }]);
 
@@ -160,22 +165,15 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
     setRound(r => r + 1);
     setPhase('result');
 
+    // Use snapshotted values — no nested setState needed
     setTimeout(() => {
-      setPlayerDeck(pd => {
-        setCpuDeck(cd => {
-          const pLeft = pd.filter(c => c._id !== playerCard._id).length;
-          const cLeft = cd.filter(c => c._id !== cpuCard._id).length;
-          if (pLeft === 0 || cLeft === 0) {
-            setPhase('over');
-          } else {
-            const nextAttacker = attackerIsPlayer ? 'cpu' : 'player';
-            setCurrentAttacker(nextAttacker);
-            setPhase(nextAttacker === 'player' ? 'attack' : 'defend');
-          }
-          return cd;
-        });
-        return pd;
-      });
+      if (nextPlayerDeck.length === 0 || nextCpuDeck.length === 0) {
+        setPhase('over');
+      } else {
+        const nextAttacker = attackerIsPlayer ? 'cpu' : 'player';
+        setCurrentAttacker(nextAttacker);
+        setPhase(nextAttacker === 'player' ? 'attack' : 'defend');
+      }
     }, 2200);
   };
 
@@ -266,7 +264,6 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
   }
 
   // ── MAIN GAME BOARD ──────────────────────────────────────────────────────
-  const isPlayerTurn = currentAttacker === 'player';
   const canPlay = (phase === 'attack' || phase === 'defend') && selected;
 
   return (
@@ -302,22 +299,15 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
         {/* Pitch */}
         <div style={{ flex: 1, background: 'linear-gradient(180deg,#071407,#0a1c0a,#071407)', borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
 
-          {/* CPU half — cards face down until played, then face up */}
+          {/* CPU half */}
           <div style={{ padding: '8px 8px 6px', minHeight: 100 }}>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(74,171,255,0.4)', letterSpacing: '0.1em', marginBottom: 5 }}>
               CPU TEAM — {cpuDeck.length} remaining
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-              {/* Face-down remaining CPU cards */}
-              {cpuDeck.map(c => <CardFaceDown key={c._id} small />)}
-              {/* Face-up played CPU cards */}
+              {cpuDeck.map(c => <CardFaceDown key={c._id || c.id} small />)}
               {cpuBoard.map((entry, i) => (
-                <CardFaceUp
-                  key={i}
-                  card={entry.card}
-                  small
-                  glow={entry.scored ? 'win' : undefined}
-                />
+                <CardFaceUp key={i} card={entry.card} small glow={entry.scored ? 'win' : undefined} />
               ))}
             </div>
             {cpuDeck.length === 0 && cpuBoard.length === 0 && (
@@ -330,19 +320,14 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
             <span style={{ background: '#0a1c0a', padding: '1px 8px', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.1em' }}>PITCH • RND {round}</span>
           </div>
 
-          {/* Player half — face-up played cards */}
+          {/* Player half */}
           <div style={{ padding: '6px 8px 8px', minHeight: 100 }}>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(184,255,60,0.35)', letterSpacing: '0.1em', marginBottom: 5 }}>
               YOUR PLAYED
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
               {playerBoard.map((entry, i) => (
-                <CardFaceUp
-                  key={i}
-                  card={entry.card}
-                  small
-                  glow={entry.scored ? 'win' : undefined}
-                />
+                <CardFaceUp key={i} card={entry.card} small glow={entry.scored ? 'win' : undefined} />
               ))}
               {playerBoard.length === 0 && (
                 <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 9, color: 'rgba(255,255,255,0.1)', padding: '8px 0' }}>Your cards appear here when played</div>
@@ -364,7 +349,7 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', marginBottom: 12 }}>
           {playerDeck.map(card => (
             <CardFaceUp
-              key={card._id}
+              key={card._id || card.id}
               card={card}
               selected={selected?._id === card._id}
               onClick={() => (phase === 'attack' || phase === 'defend') ? setSelected(s => s?._id === card._id ? null : card) : null}
