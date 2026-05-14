@@ -3,7 +3,8 @@ import { useStore } from '../store/gameStore';
 import { useState } from 'react';
 
 export default function Home() {
-  const { collection, addCard } = useStore();
+  const { library, addToLibrary } = useStore();   // ← was `collection` / `addCard`; store exposes `library` / `addToLibrary`
+  const collection = Array.isArray(library) ? library : [];
   const canPlay = collection.length >= 5;
   const [showUnlock, setShowUnlock] = useState(false);
   const [pw, setPw] = useState('');
@@ -14,7 +15,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/cards');
       const cards = await res.json();
-      cards.forEach(c => addCard(c));
+      cards.forEach(c => addToLibrary(c));
       setMsg(`✓ ${cards.length} cards unlocked!`);
       setTimeout(() => { setShowUnlock(false); setMsg(''); setPw(''); }, 1500);
     } catch {
@@ -38,7 +39,6 @@ export default function Home() {
           <rect x="160" y="700" width="80" height="40"/>
           <circle cx="200" cy="140" r="4" fill="white"/>
           <circle cx="200" cy="660" r="4" fill="white"/>
-          {/* Corner arcs */}
           <path d="M20 60 Q30 60 30 70"/>
           <path d="M380 60 Q370 60 370 70"/>
           <path d="M20 740 Q30 740 30 730"/>
@@ -50,7 +50,6 @@ export default function Home() {
 
         {/* Hero */}
         <div style={{ paddingTop: 60, paddingBottom: 32, textAlign: 'center' }}>
-          {/* Glowing orb behind title */}
           <div style={{
             position: 'absolute',
             top: 20,
@@ -110,7 +109,7 @@ export default function Home() {
         }}>
           {[
             { val: collection.length, label: 'Cards', accent: 'var(--lime)' },
-            { val: canPlay ? 'READY' : `${Math.max(0,5-collection.length)} MORE`, label: canPlay ? 'Battle' : 'Needed', accent: canPlay ? '#4aff80' : '#ff6060' },
+            { val: canPlay ? 'READY' : `${Math.max(0, 5 - collection.length)} MORE`, label: canPlay ? 'Battle' : 'Needed', accent: canPlay ? '#4aff80' : '#ff6060' },
             { val: 50, label: 'Total', accent: 'rgba(255,255,255,0.3)' },
           ].map(({ val, label, accent }, i) => (
             <div key={i} style={{
@@ -144,7 +143,7 @@ export default function Home() {
         {/* Action cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: 'fadeUp 0.5s 0.32s ease both' }}>
 
-          {/* Scan — hero CTA */}
+          {/* Scan */}
           <Link to="/scanner" style={{ textDecoration: 'none' }}>
             <div style={{
               background: 'linear-gradient(135deg, #1a2e1a, #0f1a0f)',
@@ -162,23 +161,16 @@ export default function Home() {
             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
             >
               <div style={{
-                position: 'absolute',
-                right: -20,
-                top: -20,
-                width: 120,
-                height: 120,
+                position: 'absolute', right: -20, top: -20,
+                width: 120, height: 120,
                 background: 'radial-gradient(circle, rgba(184,255,60,0.06) 0%, transparent 70%)',
               }} />
               <div style={{
-                width: 52,
-                height: 52,
+                width: 52, height: 52,
                 background: 'var(--lime)',
                 borderRadius: 14,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 24,
-                flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 24, flexShrink: 0,
                 boxShadow: '0 4px 16px var(--lime-glow-strong)',
               }}>📷</div>
               <div>
@@ -223,7 +215,7 @@ export default function Home() {
                 <div style={{ fontSize: 28, marginBottom: 8 }}>⚔️</div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff' }}>Play</div>
                 <div style={{ fontSize: 12, color: canPlay ? '#ffd700' : 'var(--muted)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, marginTop: 4 }}>
-                  {canPlay ? 'Ready!' : `Need ${5-collection.length} more`}
+                  {canPlay ? 'Ready!' : `Need ${5 - collection.length} more`}
                 </div>
               </div>
             </Link>
@@ -234,7 +226,7 @@ export default function Home() {
         <div style={{ marginTop: 32, textAlign: 'center', animation: 'fadeUp 0.5s 0.4s ease both' }}>
           <button
             onClick={() => setShowUnlock(true)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 12, fontFamily: "'Barlow Condensed', sans-serif', sans-serif", letterSpacing: '0.06em' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 12, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.06em' }}
           >
             🔑 Dev Unlock
           </button>
