@@ -6,7 +6,7 @@ import { useStore } from '../store/gameStore';
 import { useGame } from '../hooks/useGame';
 
 export default function Game() {
-  const { collection } = useStore();
+  const { library: collection } = useStore();   // ← was `collection`, store exposes `library`
   const { gameState, startGame, endGame } = useGame();
   const [selectedIds, setSelectedIds] = useState([]);
   const [playerDeck, setPlayerDeck] = useState([]);
@@ -17,16 +17,16 @@ export default function Game() {
 
   const toggleCard = (card) => {
     setSelectedIds(prev =>
-      prev.includes(card.id)
-        ? prev.filter(id => id !== card.id)
-        : prev.length < 10 ? [...prev, card.id] : prev
+      prev.includes(card._id)                          // ← was card.id; library uses _id
+        ? prev.filter(id => id !== card._id)
+        : prev.length < 10 ? [...prev, card._id] : prev
     );
   };
 
   const handleStart = async () => {
     setLoading(true); setError('');
     try {
-      const deck = collection.filter(c => selectedIds.includes(c.id));
+      const deck = collection.filter(c => selectedIds.includes(c._id)); // ← was c.id
       setPlayerDeck(deck);
       await startGame(deck);
       setPhase('battle');
@@ -77,7 +77,7 @@ export default function Game() {
         </div>
         <BattleArena
           playerDeck={playerDeck}
-          cpuDeck={gameState.cpuDeck || []}
+          cpuDeck={gameState?.cpuDeck ?? []}   // ← guarded with nullish coalescing
           onGameEnd={handleRematch}
         />
       </div>
@@ -111,8 +111,8 @@ export default function Game() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 100, justifyContent: 'center' }}>
         {collection.map(card => (
-          <div key={card.id} onClick={() => toggleCard(card)} style={{ cursor: 'pointer' }}>
-            <CardDisplay card={card} selected={selectedIds.includes(card.id)} />
+          <div key={card._id} onClick={() => toggleCard(card)} style={{ cursor: 'pointer' }}> {/* ← was card.id */}
+            <CardDisplay card={card} selected={selectedIds.includes(card._id)} /> {/* ← was card.id */}
           </div>
         ))}
       </div>
