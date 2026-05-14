@@ -201,26 +201,31 @@ export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDec
   const banner = phaseBanner();
 
   // ── Coin flip screen ──────────────────────────────────────────────────────
-  if (phase === 'coinflip' || flipping || (coinResult && phase === 'coinflip')) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 20, padding: 24 }}>
-        <div style={{ width: 100, height: 100, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 52, border: '3px solid #ffd700', background: '#1a1200', animation: 'coinSpin 1.5s ease forwards' }}>
-          {coinResult?.heads ? '🟡' : '⚪'}
-        </div>
-        {coinResult && (
-          <>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 28, color: '#fff' }}>
-              {coinResult.heads ? 'HEADS!' : 'TAILS!'}
-            </div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 16, color: coinResult.firstAttacker === 'player' ? '#ff5757' : '#4aabff' }}>
-              {coinResult.firstAttacker === 'player' ? '🔴 YOU ATTACK FIRST!' : '🔵 CPU ATTACKS FIRST!'}
-            </div>
-          </>
-        )}
-        <style>{`@keyframes coinSpin{0%{transform:rotateY(0)}50%{transform:rotateY(720deg) scale(1.2)}100%{transform:rotateY(1440deg)}}`}</style>
+ if (phase === 'coinflip' || flipping || (coinResult && phase === 'coinflip')) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 20, padding: 24 }}>
+      <div style={{
+        width: 100, height: 100, borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 52, border: '3px solid #ffd700', background: '#1a1200',
+        animation: flipping ? 'coinSpin 1.5s ease forwards' : 'none',
+      }}>
+        {!coinResult ? '🪙' : coinResult.heads ? '🟡' : '⚪'}
       </div>
-    );
-  }
+      {coinResult && (
+        <>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 28, color: '#fff' }}>
+            {coinResult.heads ? 'HEADS!' : 'TAILS!'}
+          </div>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 16, color: coinResult.firstAttacker === 'player' ? '#ff5757' : '#4aabff' }}>
+            {coinResult.firstAttacker === 'player' ? '🔴 YOU ATTACK FIRST!' : '🔵 CPU ATTACKS FIRST!'}
+          </div>
+        </>
+      )}
+      <style>{`@keyframes coinSpin{0%{transform:rotateY(0)}50%{transform:rotateY(720deg) scale(1.2)}100%{transform:rotateY(1440deg)}}`}</style>
+    </div>
+  );
+}
 
   // ── Game over screen ──────────────────────────────────────────────────────
   if (phase === 'over') {
