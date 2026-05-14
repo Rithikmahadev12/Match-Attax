@@ -83,10 +83,10 @@ function ScoreStrip({ playerGoals, cpuGoals, round, playerLeft, cpuLeft }) {
 }
 
 // ── MAIN BATTLE ARENA ─────────────────────────────────────────────────────────
-export default function BattleArena({ playerDeck: initialPlayerDeck, cpuDeck: initialCpuDeck, activePowerUps = [], onGameEnd }) {
-  const [phase, setPhase]   = useState('coinflip'); // coinflip | attack | defend | result | over
-  const [playerDeck, setPlayerDeck] = useState(() => initialPlayerDeck.map(c => applyPowerUps(c, activePowerUps)));
-  const [cpuDeck,    setCpuDeck]    = useState(initialCpuDeck);
+export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDeck: initialCpuDeck = [], activePowerUps = [], onGameEnd }) {
+  const [phase, setPhase]   = useState('coinflip');
+  const [playerDeck, setPlayerDeck] = useState(() => (initialPlayerDeck || []).map(c => applyPowerUps(c, activePowerUps)));
+  const [cpuDeck,    setCpuDeck]    = useState(initialCpuDeck || []);
   const [playerBoard, setPlayerBoard] = useState([]);
   const [cpuBoard,    setCpuBoard]    = useState([]);
   const [playerGoals, setPlayerGoals] = useState(0);
