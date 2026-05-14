@@ -1,287 +1,336 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
-import { createWorker } from 'tesseract.js';
-import { useStore } from '../store/gameStore';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useStore, applyPowerUps, BUDGET_MAX } from '../store/gameStore';
 
-/** Pull numbers from OCR text for ATK / DEF pre-fill */
-function extractStats(text) {
-  const nums = (text.match(/\b(\d{1,3})\b/g) || [])
-    .map(Number)
-    .filter(n => n >= 1 && n <= 99);
-  return { attack: nums[0] ?? 75, defense: nums[1] ?? 65 };
+// ── CPU AI ────────────────────────────────────────────────────────────────────
+function cpuPickAttacker(deck) {
+  // Pick the card with highest attack; add 30% randomness
+  if (!deck.length) return null;
+  if (Math.random() < 0.3) return deck[Math.floor(Math.random() * deck.length)];
+  return [...deck].sort((a, b) => b.attack - a.attack)[0];
+}
+function cpuPickDefender(deck) {
+  if (!deck.length) return null;
+  if (Math.random() < 0.3) return deck[Math.floor(Math.random() * deck.length)];
+  return [...deck].sort((a, b) => b.defense - a.defense)[0];
 }
 
-/** Pick a player-name candidate from OCR lines */
-function extractName(text) {
-  const skip = /^(attack|defense|defence|star|rating|topps|match attax|gk|st|cb|lb|rb|cm|cam|cdm|lw|rw|mid|atk|def|\d+)$/i;
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 40);
-  return lines.find(l => !skip.test(l)) || '';
-}
-
-export default function CardScanner({ onCardFound }) {
-  const videoRef   = useRef(null);
-  const canvasRef  = useRef(null);
-  const streamRef  = useRef(null);
-  const workerRef  = useRef(null);
-
-  const [cameraOn,    setCameraOn]    = useState(false);
-  const [captured,    setCaptured]    = useState(null); // dataURL
-  const [scanning,    setScanning]    = useState(false);
-  const [progress,    setProgress]    = useState(0);
-  const [showForm,    setShowForm]    = useState(false);
-  const [error,       setError]       = useState('');
-
-  // Form fields
-  const [name,     setName]     = useState('');
-  const [club,     setClub]     = useState('');
-  const [position, setPosition] = useState('ATK');
-  const [attack,   setAttack]   = useState(75);
-  const [defense,  setDefense]  = useState(65);
-  const [price,    setPrice]    = useState(10);
-
-  const addCard = useStore(s => s.addCard);
-
-  // ── Camera ──────────────────────────────────────────
-  const startCamera = useCallback(async () => {
-    setError('');
-    try {
-      if (streamRef.current) stopCamera();
-      let s;
-      try { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } }); }
-      catch { s = await navigator.mediaDevices.getUserMedia({ video: true }); }
-      streamRef.current = s;
-      const vid = videoRef.current;
-      if (!vid) { s.getTracks().forEach(t => t.stop()); return; }
-      vid.srcObject = s;
-      await new Promise(r => { vid.onloadedmetadata = r; setTimeout(r, 3000); });
-      try { await vid.play(); } catch {}
-      setCameraOn(true);
-    } catch (e) {
-      setError(e.name === 'NotAllowedError'
-        ? 'Camera permission denied — please allow camera access and retry.'
-        : `Camera error: ${e.message || e.name}`);
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setCameraOn(false);
-  }, []);
-
-  // ── Capture + OCR ────────────────────────────────────
-  const capture = useCallback(async () => {
-    const vid    = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!vid || !canvas) return;
-    const ctx = canvas.getContext('2d');
-    canvas.width  = vid.videoWidth  || 640;
-    canvas.height = vid.videoHeight || 480;
-    ctx.drawImage(vid, 0, 0);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    setCaptured(dataUrl);
-    stopCamera();
-    setScanning(true);
-    setProgress(0);
-
-    try {
-      if (!workerRef.current) {
-        workerRef.current = await createWorker('eng', 1, {
-          logger: m => {
-            if (m.status === 'recognizing text')
-              setProgress(Math.round(m.progress * 100));
-          },
-        });
-      }
-      const { data: { text } } = await workerRef.current.recognize(dataUrl);
-      const stats = extractStats(text);
-      const detectedName = extractName(text);
-      setName(detectedName);
-      setAttack(stats.attack);
-      setDefense(stats.defense);
-    } catch {
-      // OCR failed — let user fill in manually
-    } finally {
-      setScanning(false);
-      setShowForm(true);
-    }
-  }, [stopCamera]);
-
-  // ── Save card ────────────────────────────────────────
-  const saveCard = () => {
-    if (!name.trim()) { setError('Enter a player name'); return; }
-    const card = {
-      name:     name.trim(),
-      club:     club.trim() || 'Unknown Club',
-      position,
-      attack,
-      defense,
-      price,
-      photo:    captured || null,
-    };
-    const saved = addCard(card);
-    onCardFound?.(saved);
-    reset();
+// ── Sub-components ────────────────────────────────────────────────────────────
+function MiniCard({ card, faceDown = false, glow = null, onClick, selected }) {
+  const posColor = { GK: '#e67e00', DEF: '#1a6ef5', MID: '#15a050', ATK: '#cc2020' }[card?.position] || '#555';
+  const base = {
+    width: 72, borderRadius: 8, overflow: 'hidden', flexShrink: 0, cursor: onClick ? 'pointer' : 'default',
+    border: selected ? '2px solid #b8ff3c' : '1.5px solid rgba(255,255,255,0.1)',
+    background: faceDown
+      ? 'repeating-linear-gradient(45deg,#0a180a,#0a180a 5px,#091409 5px,#091409 10px)'
+      : '#0d180d',
+    boxShadow: glow === 'win' ? '0 0 0 2px #4aff80, 0 4px 16px rgba(74,255,128,0.4)' :
+               glow === 'lose' ? '0 0 0 2px #ff5757' : 'none',
+    transition: 'all 0.2s ease',
+    transform: selected ? 'translateY(-6px) scale(1.05)' : 'none',
   };
-
-  const reset = () => {
-    setCaptured(null);
-    setShowForm(false);
-    setError('');
-    setName(''); setClub(''); setPosition('ATK');
-    setAttack(75); setDefense(65); setPrice(10);
-  };
-
-  useEffect(() => () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    workerRef.current?.terminate();
-  }, []);
-
-  // ── UI ───────────────────────────────────────────────
-  const posColors = { GK: '#e67e00', DEF: '#1a6ef5', MID: '#15a050', ATK: '#cc2020' };
-
+  if (faceDown) return <div style={base} onClick={onClick}><div style={{ height: 90 }} /></div>;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, width: '100%' }}>
-
-      {/* Viewfinder */}
-      <div style={{
-        position: 'relative', width: '100%', maxWidth: 320, height: 400,
-        background: '#05090a', borderRadius: 16, overflow: 'hidden',
-        border: '1px solid rgba(184,255,60,0.12)',
-      }}>
-        {/* Video */}
-        <video ref={videoRef} autoPlay playsInline muted style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', display: cameraOn && !captured ? 'block' : 'none', zIndex: 1,
-        }} />
-
-        {/* Placeholder */}
-        {!cameraOn && !captured && (
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 10, color: '#2a3a2a',
-          }}>
-            <div style={{ fontSize: 52 }}>📷</div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13 }}>Tap Start Camera below</div>
-          </div>
-        )}
-
-        {/* Captured image */}
-        {captured && (
-          <img src={captured} alt="captured" style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%',
-            objectFit: 'cover', zIndex: 2,
-          }} />
-        )}
-
-        {/* Gold targeting frame */}
-        {cameraOn && !captured && (
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 3, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
-          }}>
-            <div style={{
-              width: 200, height: 270, borderRadius: 10,
-              border: '2px solid #FFD700',
-              boxShadow: '0 0 16px rgba(255,215,0,0.35)',
-            }} />
-          </div>
-        )}
-
-        {/* Scanning overlay */}
-        {scanning && (
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 10,
-            background: 'rgba(5,9,10,0.92)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', gap: 14,
-          }}>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: '#FFD700', letterSpacing: '0.1em' }}>
-              SCANNING {progress}%
-            </div>
-            <div style={{ width: 200, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ width: `${progress}%`, height: '100%', background: '#FFD700', transition: 'width 0.3s' }} />
-            </div>
-          </div>
-        )}
+    <div style={base} onClick={onClick}>
+      {card?.photo
+        ? <img src={card.photo} alt={card.name} style={{ width: '100%', height: 56, objectFit: 'cover', objectPosition: 'top', display: 'block' }} />
+        : <div style={{ width: '100%', height: 56, background: '#0a140a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#1a2a1a' }}>👤</div>
+      }
+      <div style={{ padding: '4px 5px 6px', background: 'rgba(0,0,0,0.65)' }}>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 9, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 3 }}>{card?.name}</div>
+        <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 8, color: '#ff5757', width: 18 }}>ATK</span>
+          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 10, color: '#ff5757' }}>{card?.attack}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginTop: 1 }}>
+          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 8, color: '#4aabff', width: 18 }}>DEF</span>
+          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 10, color: '#4aabff' }}>{card?.defense}</span>
+        </div>
+        <div style={{ marginTop: 2 }}>
+          <span style={{ background: posColor, color: '#fff', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 7, padding: '1px 4px', borderRadius: 3 }}>{card?.position}</span>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Camera buttons */}
-      {!captured && !showForm && (
-        <div style={{ display: 'flex', gap: 10 }}>
-          {!cameraOn
-            ? <button onClick={startCamera} className="btn-lime" style={{ padding: '12px 28px', fontSize: 16, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05' }}>Start Camera</button>
-            : <>
-                <button onClick={capture} style={{ padding: '12px 24px', fontSize: 16, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05' }}>⊙ Capture</button>
-                <button onClick={stopCamera} style={{ padding: '12px 18px', fontSize: 14, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, cursor: 'pointer', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', color: '#4a6050' }}>Stop</button>
-              </>
+function ScoreStrip({ playerGoals, cpuGoals, round, playerLeft, cpuLeft }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', background: '#0d140d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden', margin: '0 16px 12px' }}>
+      {[
+        { goals: playerGoals, label: 'YOU', color: '#4aff80' },
+        null,
+        { goals: cpuGoals,    label: 'CPU', color: '#ff5757' },
+      ].map((item, i) => item === null ? (
+        <div key={i} style={{ padding: '10px 0', textAlign: 'center', flex: 1 }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 10, color: '#4a6050', letterSpacing: '0.1em' }}>RND</div>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 20, color: '#b8ff3c' }}>{round}</div>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 9, color: '#4a6050' }}>{playerLeft} v {cpuLeft}</div>
+        </div>
+      ) : (
+        <div key={i} style={{ flex: 1, padding: '10px 8px', textAlign: 'center', borderLeft: i === 2 ? '1px solid rgba(255,255,255,0.07)' : 'none', borderRight: i === 0 ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 32, color: item.color, lineHeight: 1 }}>{item.goals}</div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 1, margin: '2px 0' }}>
+            {Array.from({ length: Math.min(item.goals, 5) }).map((_, gi) => (
+              <span key={gi} style={{ fontSize: 10 }}>⚽</span>
+            ))}
+          </div>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.1em', color: '#4a6050' }}>{item.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── MAIN BATTLE ARENA ─────────────────────────────────────────────────────────
+export default function BattleArena({ playerDeck: initialPlayerDeck, cpuDeck: initialCpuDeck, activePowerUps = [], onGameEnd }) {
+  const [phase, setPhase]   = useState('coinflip'); // coinflip | attack | defend | result | over
+  const [playerDeck, setPlayerDeck] = useState(() => initialPlayerDeck.map(c => applyPowerUps(c, activePowerUps)));
+  const [cpuDeck,    setCpuDeck]    = useState(initialCpuDeck);
+  const [playerBoard, setPlayerBoard] = useState([]);
+  const [cpuBoard,    setCpuBoard]    = useState([]);
+  const [playerGoals, setPlayerGoals] = useState(0);
+  const [cpuGoals,    setCpuGoals]    = useState(0);
+  const [round,       setRound]       = useState(0);
+  const [currentAttacker, setCurrentAttacker] = useState(null); // 'player' | 'cpu'
+  const [selected,    setSelected]    = useState(null);
+  const [lastResult,  setLastResult]  = useState(null);
+  const [coinResult,  setCoinResult]  = useState(null);
+  const [flipping,    setFlipping]    = useState(false);
+
+  // Coin flip on mount
+  useEffect(() => {
+    setFlipping(true);
+    const t = setTimeout(() => {
+      const heads = Math.random() < 0.5;
+      const firstAttacker = heads ? 'player' : 'cpu';
+      setCoinResult({ heads, firstAttacker });
+      setCurrentAttacker(firstAttacker);
+      setFlipping(false);
+      setTimeout(() => setPhase(firstAttacker === 'player' ? 'attack' : 'defend'), 2200);
+    }, 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  const isPlayerTurn  = currentAttacker === 'player';
+  const playerRole    = isPlayerTurn ? 'attack' : 'defend';
+
+  // ── Resolve a round ───────────────────────────────────────────────────────
+  const resolveRound = (attackerCard, attackerSide, defenderCard, defenderSide) => {
+    const atk  = attackerCard.attack;
+    const def  = defenderCard.defense;
+    const goal = atk > def;
+    const result = { atk, def, goal, attackerCard, defenderCard, attackerSide };
+
+    // Move cards to boards
+    if (attackerSide === 'player') {
+      setPlayerDeck(d => d.filter(c => c._id !== attackerCard._id));
+      setPlayerBoard(b => [...b, attackerCard]);
+    } else {
+      setCpuDeck(d => d.filter(c => c._id !== attackerCard._id));
+      setCpuBoard(b => [...b, attackerCard]);
+    }
+    if (defenderSide === 'player') {
+      setPlayerDeck(d => d.filter(c => c._id !== defenderCard._id));
+      setPlayerBoard(b => [...b, defenderCard]);
+    } else {
+      setCpuDeck(d => d.filter(c => c._id !== defenderCard._id));
+      setCpuBoard(b => [...b, defenderCard]);
+    }
+
+    if (goal) {
+      if (attackerSide === 'player') setPlayerGoals(g => g + 1);
+      else                            setCpuGoals(g => g + 1);
+    }
+
+    setLastResult(result);
+    setSelected(null);
+    setRound(r => r + 1);
+    setPhase('result');
+
+    // Check remaining decks (need state updater pattern; use callbacks)
+    setTimeout(() => {
+      setPlayerDeck(pd => {
+        setCpuDeck(cd => {
+          const nextPd = pd.filter(c => c._id !== attackerCard._id && c._id !== defenderCard._id);
+          const nextCd = cd.filter(c => c._id !== attackerCard._id && c._id !== defenderCard._id);
+          const over = nextPd.length === 0 || nextCd.length === 0;
+          if (over) {
+            setPhase('over');
+          } else {
+            // Alternate attacker
+            const nextAttacker = attackerSide === 'player' ? 'cpu' : 'player';
+            setCurrentAttacker(nextAttacker);
+            setPhase(nextAttacker === 'player' ? 'attack' : 'defend');
+          }
+          return pd; // don't double-update; already updated above
+        });
+        return pd;
+      });
+    }, 2000);
+  };
+
+  // ── Player actions ────────────────────────────────────────────────────────
+  const handlePlayerAttack = () => {
+    if (!selected) return;
+    const defender = cpuPickDefender(cpuDeck);
+    if (!defender) return;
+    resolveRound(selected, 'player', defender, 'cpu');
+  };
+
+  const handlePlayerDefend = () => {
+    if (!selected) return;
+    const attacker = cpuPickAttacker(cpuDeck);
+    if (!attacker) return;
+    resolveRound(attacker, 'cpu', selected, 'player');
+  };
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  const phaseBanner = () => {
+    if (phase === 'attack') return { text: '⚔️ YOUR TURN — pick your attacker', cls: 'atk' };
+    if (phase === 'defend') return { text: '🛡️ CPU IS ATTACKING — pick your defender', cls: 'def' };
+    if (phase === 'result' && lastResult) {
+      const { goal, attackerSide, atk, def } = lastResult;
+      if (goal && attackerSide === 'player') return { text: `⚽ GOAL! ATK ${atk} beat DEF ${def}!`, cls: 'goal' };
+      if (goal && attackerSide === 'cpu')    return { text: `💀 CPU SCORED! ATK ${atk} vs DEF ${def}`, cls: 'bad' };
+      return { text: `🛡️ DEFENDED! DEF ${def} held off ATK ${atk}`, cls: 'def' };
+    }
+    return null;
+  };
+
+  const banner = phaseBanner();
+
+  // ── Coin flip screen ──────────────────────────────────────────────────────
+  if (phase === 'coinflip' || flipping || (coinResult && phase === 'coinflip')) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 20, padding: 24 }}>
+        <div style={{ width: 100, height: 100, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 52, border: '3px solid #ffd700', background: '#1a1200', animation: 'coinSpin 1.5s ease forwards' }}>
+          {coinResult?.heads ? '🟡' : '⚪'}
+        </div>
+        {coinResult && (
+          <>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 28, color: '#fff' }}>
+              {coinResult.heads ? 'HEADS!' : 'TAILS!'}
+            </div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 16, color: coinResult.firstAttacker === 'player' ? '#ff5757' : '#4aabff' }}>
+              {coinResult.firstAttacker === 'player' ? '🔴 YOU ATTACK FIRST!' : '🔵 CPU ATTACKS FIRST!'}
+            </div>
+          </>
+        )}
+        <style>{`@keyframes coinSpin{0%{transform:rotateY(0)}50%{transform:rotateY(720deg) scale(1.2)}100%{transform:rotateY(1440deg)}}`}</style>
+      </div>
+    );
+  }
+
+  // ── Game over screen ──────────────────────────────────────────────────────
+  if (phase === 'over') {
+    const won  = playerGoals > cpuGoals;
+    const drew = playerGoals === cpuGoals;
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+        <div style={{ fontSize: 64, marginBottom: 12 }}>{won ? '🏆' : drew ? '🤝' : '💀'}</div>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 48, color: won ? '#b8ff3c' : drew ? '#4aabff' : '#ff5757', marginBottom: 20 }}>
+          {won ? 'YOU WIN!' : drew ? 'DRAW!' : 'CPU WINS!'}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 28, background: '#0d140d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '16px 32px', maxWidth: 260, margin: '0 auto 28px' }}>
+          <div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 36, color: '#4aff80' }}>{playerGoals}</div>
+            <div style={{ fontSize: 16 }}>{Array.from({ length: Math.min(playerGoals, 6) }).map((_, i) => <span key={i}>⚽</span>)}</div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: '#4a6050' }}>YOU</div>
+          </div>
+          <div style={{ width: 1, background: 'rgba(255,255,255,0.07)' }} />
+          <div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 36, color: '#ff5757' }}>{cpuGoals}</div>
+            <div style={{ fontSize: 16 }}>{Array.from({ length: Math.min(cpuGoals, 6) }).map((_, i) => <span key={i}>⚽</span>)}</div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: '#4a6050' }}>CPU</div>
+          </div>
+        </div>
+        {won && <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 14, color: '#ffd700', marginBottom: 16 }}>+100 coins earned!</div>}
+        <button onClick={() => onGameEnd?.({ playerGoals, cpuGoals, won, drew })} style={{ width: '100%', padding: '14px 0', fontSize: 18, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05' }}>
+          Play Again
+        </button>
+      </div>
+    );
+  }
+
+  // ── Main board ────────────────────────────────────────────────────────────
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <ScoreStrip playerGoals={playerGoals} cpuGoals={cpuGoals} round={round} playerLeft={playerDeck.length} cpuLeft={cpuDeck.length} />
+
+      {/* Phase banner */}
+      {banner && (
+        <div style={{
+          margin: '0 16px 10px', padding: '10px 14px', borderRadius: 10,
+          fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: '0.06em',
+          background: banner.cls === 'atk' ? 'rgba(255,87,87,0.12)' : banner.cls === 'goal' ? 'rgba(184,255,60,0.1)' : banner.cls === 'bad' ? 'rgba(255,87,87,0.12)' : 'rgba(74,171,255,0.12)',
+          border: `1px solid ${banner.cls === 'atk' ? 'rgba(255,87,87,0.3)' : banner.cls === 'goal' ? 'rgba(184,255,60,0.25)' : banner.cls === 'bad' ? 'rgba(255,87,87,0.3)' : 'rgba(74,171,255,0.3)'}`,
+          color: banner.cls === 'atk' ? '#ff8080' : banner.cls === 'goal' ? '#b8ff3c' : banner.cls === 'bad' ? '#ff8080' : '#7dc8ff',
+        }}>
+          {banner.text}
+        </div>
+      )}
+
+      {/* Pitch board */}
+      <div style={{ margin: '0 16px', background: 'linear-gradient(180deg,#071407,#0a1c0a,#071407)', borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+        {/* CPU board — face up (you can see what they played) */}
+        <div style={{ padding: '10px 10px 8px', minHeight: 110, display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'flex-start', background: 'rgba(74,171,255,0.03)' }}>
+          <div style={{ width: '100%', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.1em', color: 'rgba(74,171,255,0.4)', marginBottom: 3 }}>CPU PLAYED</div>
+          {cpuBoard.length === 0
+            ? <div style={{ width: '100%', fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.1)', textAlign: 'center', padding: '12px 0' }}>No cards yet</div>
+            : cpuBoard.map(c => <MiniCard key={c._id} card={c} glow={lastResult?.attackerCard?._id === c._id && lastResult?.goal && lastResult?.attackerSide === 'cpu' ? 'win' : undefined} />)
           }
         </div>
-      )}
 
-      {/* Card details form */}
-      {showForm && (
-        <div style={{ width: '100%', background: '#0d140d', border: '1px solid rgba(184,255,60,0.12)', borderRadius: 16, padding: 20 }}>
-          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.1em', color: '#b8ff3c', marginBottom: 14, textAlign: 'center' }}>
-            CONFIRM CARD DETAILS
-          </div>
-
-          {/* Photo preview */}
-          {captured && (
-            <div style={{ textAlign: 'center', marginBottom: 14 }}>
-              <img src={captured} alt="card" style={{ width: 100, height: 130, objectFit: 'cover', objectPosition: 'top', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)' }} />
-              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: '#4a6050', marginTop: 4 }}>Photo saved ✓</div>
-            </div>
-          )}
-
-          {[
-            { label: 'Player Name', value: name, onChange: setName, type: 'text', placeholder: 'e.g. Haaland' },
-            { label: 'Club',        value: club, onChange: setClub, type: 'text', placeholder: 'e.g. Man City' },
-          ].map(f => (
-            <div key={f.label} style={{ marginBottom: 12 }}>
-              <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>{f.label}</label>
-              <input value={f.value} onChange={e => f.onChange(e.target.value)} placeholder={f.placeholder} style={{ width: '100%', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '10px 12px', color: '#fff', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none' }} />
-            </div>
-          ))}
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Position</label>
-            <select value={position} onChange={e => setPosition(e.target.value)} style={{ width: '100%', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '10px 12px', color: posColors[position] || '#fff', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 14, outline: 'none' }}>
-              {['GK','DEF','MID','ATK'].map(p => <option key={p} value={p} style={{ color: posColors[p] }}>{p}</option>)}
-            </select>
-          </div>
-
-          {[
-            { label: 'Attack', value: attack, onChange: setAttack, color: '#ff5757' },
-            { label: 'Defence', value: defense, onChange: setDefense, color: '#4aabff' },
-            { label: 'Price (£M)', value: price, onChange: setPrice, color: '#ffd700' },
-          ].map(f => (
-            <div key={f.label} style={{ marginBottom: 12 }}>
-              <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>{f.label}</span>
-                <span style={{ color: f.color, fontWeight: 800 }}>{f.value}{f.label.includes('Price') ? 'M' : ''}</span>
-              </label>
-              <input type="range" min={1} max={f.label.includes('Price') ? 100 : 99} value={f.value}
-                onChange={e => f.onChange(+e.target.value)}
-                style={{ width: '100%', accentColor: f.color }} />
-            </div>
-          ))}
-
-          {error && <div style={{ color: '#ff6060', fontSize: 13, marginBottom: 10 }}>{error}</div>}
-
-          <button onClick={saveCard} style={{ width: '100%', padding: '14px 0', fontSize: 18, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05', marginBottom: 8 }}>
-            + Add to Collection
-          </button>
-          <button onClick={reset} style={{ width: '100%', padding: '10px 0', fontSize: 14, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, cursor: 'pointer', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', color: '#4a6050' }}>
-            Cancel
-          </button>
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ background: '#0a1c0a', padding: '2px 10px', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.2)' }}>PITCH</span>
         </div>
-      )}
 
-      {error && !showForm && (
-        <p style={{ color: '#ff6060', fontSize: 13, textAlign: 'center', maxWidth: 280 }}>{error}</p>
-      )}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
+        {/* Player board — face up */}
+        <div style={{ padding: '8px 10px 10px', minHeight: 110, display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'flex-start', background: 'rgba(184,255,60,0.02)' }}>
+          <div style={{ width: '100%', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.1em', color: 'rgba(184,255,60,0.35)', marginBottom: 3 }}>YOUR PLAYED</div>
+          {playerBoard.length === 0
+            ? <div style={{ width: '100%', fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.1)', textAlign: 'center', padding: '12px 0' }}>Your cards appear here</div>
+            : playerBoard.map(c => <MiniCard key={c._id} card={c} glow={lastResult?.attackerCard?._id === c._id && lastResult?.goal && lastResult?.attackerSide === 'player' ? 'win' : undefined} />)
+          }
+        </div>
+      </div>
+
+      {/* Action zone */}
+      <div style={{ padding: '14px 16px 0' }}>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '0.1em', color: '#4a6050', textTransform: 'uppercase', marginBottom: 8 }}>
+          {phase === 'attack' ? 'Your squad — tap to select attacker:' : phase === 'defend' ? 'Your squad — tap to select defender:' : 'Waiting...'}
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 14 }}>
+          {playerDeck.map(card => (
+            <MiniCard
+              key={card._id}
+              card={card}
+              selected={selected?._id === card._id}
+              onClick={() => (phase === 'attack' || phase === 'defend') ? setSelected(s => s?._id === card._id ? null : card) : null}
+            />
+          ))}
+          {playerDeck.length === 0 && (
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, color: '#4a6050', padding: '20px 0', width: '100%', textAlign: 'center' }}>No cards remaining</div>
+          )}
+        </div>
+
+        {(phase === 'attack' || phase === 'defend') && (
+          <button
+            onClick={phase === 'attack' ? handlePlayerAttack : handlePlayerDefend}
+            disabled={!selected}
+            style={{
+              width: '100%', padding: '14px 0', fontSize: 18, borderRadius: 10,
+              fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: selected ? 'pointer' : 'not-allowed',
+              background: selected ? '#b8ff3c' : '#1a2a1a', border: 'none',
+              color: selected ? '#050c05' : '#4a6050', transition: 'all 0.15s',
+            }}
+          >
+            {phase === 'attack' ? '⚔️ ATTACK!' : '🛡️ DEFEND!'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
