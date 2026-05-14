@@ -13,9 +13,8 @@ export const POWERUPS = [
   { id: 'pu_both10', name: 'Super Squad',     emoji: '🚀', desc: '+10 ATK & DEF all', atk: 10, def: 10, cost: 18 },
 ];
 
-export const BUDGET_MAX = 100; // £100M
+export const BUDGET_MAX = 100;
 
-// 11 formation slots (4-3-3 shape)
 export const FORMATION_SLOTS = [
   { id: 'gk',   label: 'GK',  row: 4, col: 1 },
   { id: 'def1', label: 'DEF', row: 3, col: 0 },
@@ -34,7 +33,6 @@ export const POS_COLOR = {
   GK: '#e67e00', DEF: '#1a6ef5', MID: '#15a050', ATK: '#cc2020',
 };
 
-/** Apply power-up bonuses to a card */
 export function applyBonus(card, atkBonus, defBonus) {
   return {
     ...card,
@@ -43,7 +41,6 @@ export function applyBonus(card, atkBonus, defBonus) {
   };
 }
 
-/** Get team cards with bonuses applied */
 export function resolveTeamCards(team, allCards) {
   const bonus = (team.powerUps || []).reduce(
     (acc, puId) => {
@@ -59,20 +56,33 @@ export function resolveTeamCards(team, allCards) {
     .map(c => applyBonus(c, bonus.atk, bonus.def));
 }
 
+/** Keep cards and collection in sync (same array, two keys). */
+const sync = (cards) => ({ cards, collection: cards });
+
 export const useStore = create(
   persist(
     (set, get) => ({
-      // ── Cards ──
+      // ── Cards / Collection ──
       cards: [],
+      collection: [],   // alias — always mirrors `cards`
+
       addCard: (card) => {
-        const c = { id: uid(), ...card };
-        set(s => ({ cards: [...(s.cards || []), c] }));
+        const existing = get().cards;
+        // Deduplicate by original DB id
+        if (card.id && existing.some(c => c.id === card.id)) return card;
+        const c = { ...card, id: card.id || uid() };
+        set(sync([...existing, c]));
         return c;
       },
+
       updateCard: (id, updates) =>
-        set(s => ({ cards: (s.cards || []).map(c => c.id === id ? { ...c, ...updates } : c) })),
+        set(sync(get().cards.map(c => c.id === id ? { ...c, ...updates } : c))),
+
       deleteCard: (id) =>
-        set(s => ({ cards: (s.cards || []).filter(c => c.id !== id) })),
+        set(sync(get().cards.filter(c => c.id !== id))),
+
+      // Alias used by components
+      removeCard: (id) => get().deleteCard(id),
 
       // ── Teams ──
       teams: [],
@@ -90,26 +100,35 @@ export const useStore = create(
         return t;
       },
       deleteTeam: (id) =>
-        set(s => ({ teams: (s.teams || []).filter(t => t.id !== id) })),
+        set(s => ({ teams: s.teams.filter(t => t.id !== id) })),
 
-      // ── Active game (not persisted) ──
+      // ── Active game session (ephemeral — not persisted) ──
+      sessionId: null,
+      gameState: null,
+      lastResult: null,
+      setSession: (sid, game) => set({ sessionId: sid, gameState: game, lastResult: null }),
+      updateGame: (game, result) => set({ gameState: game, lastResult: result }),
+      clearGame: () => set({ sessionId: null, gameState: null, lastResult: null }),
+
       gameSetup: null,
       setGameSetup: (setup) => set({ gameSetup: setup }),
       clearGameSetup: () => set({ gameSetup: null }),
     }),
     {
       name: 'card-attax-v2',
-      // FIX: 'partialState' is not valid — must be 'partialize'
       partialize: (state) => ({
         cards: state.cards || [],
         teams: state.teams || [],
       }),
-      // Safely merge persisted data so arrays are never undefined on load
-      merge: (persisted, current) => ({
-        ...current,
-        cards: persisted?.cards || [],
-        teams: persisted?.teams || [],
-      }),
+      merge: (persisted, current) => {
+        const cards = persisted?.cards || [];
+        return {
+          ...current,
+          cards,
+          collection: cards,   // ensure alias is populated on rehydrate
+          teams: persisted?.teams || [],
+        };
+      },
     }
   )
 );
