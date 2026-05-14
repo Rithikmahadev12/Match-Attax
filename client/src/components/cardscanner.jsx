@@ -1,354 +1,287 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { useOCR } from '../hooks/useOCR';
-import { matchCardFromText, extractStatsFromText } from '../utils/cardMatcher';
-import CardDisplay from './carddisplay';
+import { createWorker } from 'tesseract.js';
 import { useStore } from '../store/gameStore';
 
-function makeUnknownCard(rawText, stats) {
-  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 40);
-  const skip = /^(attack|defense|defence|star|rating|topps|match attax|\d+)$/i;
-  const name = lines.find(l => !skip.test(l)) || 'Unknown Player';
-  return {
-    id: `custom-${Date.now()}`,
-    name,
-    club: 'Unknown Club',
-    nation: '??',
-    position: 'ST',
-    attack: stats?.attack ?? 75,
-    defense: stats?.defense ?? 60,
-    star: stats?.star ?? 70,
-    special: null,
-  };
+/** Pull numbers from OCR text for ATK / DEF pre-fill */
+function extractStats(text) {
+  const nums = (text.match(/\b(\d{1,3})\b/g) || [])
+    .map(Number)
+    .filter(n => n >= 1 && n <= 99);
+  return { attack: nums[0] ?? 75, defense: nums[1] ?? 65 };
+}
+
+/** Pick a player-name candidate from OCR lines */
+function extractName(text) {
+  const skip = /^(attack|defense|defence|star|rating|topps|match attax|gk|st|cb|lb|rb|cm|cam|cdm|lw|rw|mid|atk|def|\d+)$/i;
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 40);
+  return lines.find(l => !skip.test(l)) || '';
 }
 
 export default function CardScanner({ onCardFound }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null); // use ref for stream so stopCamera always sees latest
-  const [cameraOn, setCameraOn] = useState(false);
-  const [capturedImage, setCapturedImage] = useState(null);
-  const [matchedCard, setMatchedCard] = useState(null);
-  const [error, setError] = useState('');
-  const [status, setStatus] = useState('idle');
-  const { scanImage, scanning, progress } = useOCR();
+  const videoRef   = useRef(null);
+  const canvasRef  = useRef(null);
+  const streamRef  = useRef(null);
+  const workerRef  = useRef(null);
+
+  const [cameraOn,    setCameraOn]    = useState(false);
+  const [captured,    setCaptured]    = useState(null); // dataURL
+  const [scanning,    setScanning]    = useState(false);
+  const [progress,    setProgress]    = useState(0);
+  const [showForm,    setShowForm]    = useState(false);
+  const [error,       setError]       = useState('');
+
+  // Form fields
+  const [name,     setName]     = useState('');
+  const [club,     setClub]     = useState('');
+  const [position, setPosition] = useState('ATK');
+  const [attack,   setAttack]   = useState(75);
+  const [defense,  setDefense]  = useState(65);
+  const [price,    setPrice]    = useState(10);
+
   const addCard = useStore(s => s.addCard);
 
+  // ── Camera ──────────────────────────────────────────
   const startCamera = useCallback(async () => {
     setError('');
     try {
-      // Stop any existing stream first
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
-      }
-
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-      } catch {
-        // Fallback: any camera
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      }
-
-      streamRef.current = stream;
-
-      // Assign srcObject directly — don't wait for state, just set on the element
-      const video = videoRef.current;
-      if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
-
-      video.srcObject = stream;
-
-      // Wait for metadata to load, then play
-      await new Promise((resolve, reject) => {
-        video.onloadedmetadata = resolve;
-        video.onerror = reject;
-        setTimeout(resolve, 3000); // safety timeout
-      });
-
-      try { await video.play(); } catch (playErr) {
-        // autoplay may have already started it — ignore
-      }
-
+      if (streamRef.current) stopCamera();
+      let s;
+      try { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } }); }
+      catch { s = await navigator.mediaDevices.getUserMedia({ video: true }); }
+      streamRef.current = s;
+      const vid = videoRef.current;
+      if (!vid) { s.getTracks().forEach(t => t.stop()); return; }
+      vid.srcObject = s;
+      await new Promise(r => { vid.onloadedmetadata = r; setTimeout(r, 3000); });
+      try { await vid.play(); } catch {}
       setCameraOn(true);
     } catch (e) {
-      console.error('Camera error:', e);
-      if (e.name === 'NotAllowedError') {
-        setError('Camera permission denied. Please allow camera access in your browser settings and try again.');
-      } else if (e.name === 'NotFoundError') {
-        setError('No camera found on this device.');
-      } else {
-        setError(`Camera error: ${e.message || e.name}`);
-      }
+      setError(e.name === 'NotAllowedError'
+        ? 'Camera permission denied — please allow camera access and retry.'
+        : `Camera error: ${e.message || e.name}`);
     }
   }, []);
 
   const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
   }, []);
 
+  // ── Capture + OCR ────────────────────────────────────
   const capture = useCallback(async () => {
-    const video = videoRef.current;
+    const vid    = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!vid || !canvas) return;
     const ctx = canvas.getContext('2d');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    ctx.drawImage(video, 0, 0);
+    canvas.width  = vid.videoWidth  || 640;
+    canvas.height = vid.videoHeight || 480;
+    ctx.drawImage(vid, 0, 0);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    setCapturedImage(dataUrl);
-    setMatchedCard(null);
-    setStatus('scanning');
-    const text = await scanImage(dataUrl);
-    setStatus('matching');
-    let card = await matchCardFromText(text);
-    if (!card) {
-      const stats = extractStatsFromText(text);
-      card = makeUnknownCard(text, stats);
-      setStatus('found_unknown');
-    } else {
-      setStatus('found');
+    setCaptured(dataUrl);
+    stopCamera();
+    setScanning(true);
+    setProgress(0);
+
+    try {
+      if (!workerRef.current) {
+        workerRef.current = await createWorker('eng', 1, {
+          logger: m => {
+            if (m.status === 'recognizing text')
+              setProgress(Math.round(m.progress * 100));
+          },
+        });
+      }
+      const { data: { text } } = await workerRef.current.recognize(dataUrl);
+      const stats = extractStats(text);
+      const detectedName = extractName(text);
+      setName(detectedName);
+      setAttack(stats.attack);
+      setDefense(stats.defense);
+    } catch {
+      // OCR failed — let user fill in manually
+    } finally {
+      setScanning(false);
+      setShowForm(true);
     }
-    setMatchedCard(card);
-  }, [scanImage]);
+  }, [stopCamera]);
 
-  const keepCard = () => {
-    if (!matchedCard) return;
-    addCard(matchedCard);
-    onCardFound?.(matchedCard);
-    setCapturedImage(null);
-    setMatchedCard(null);
-    setStatus('idle');
+  // ── Save card ────────────────────────────────────────
+  const saveCard = () => {
+    if (!name.trim()) { setError('Enter a player name'); return; }
+    const card = {
+      name:     name.trim(),
+      club:     club.trim() || 'Unknown Club',
+      position,
+      attack,
+      defense,
+      price,
+      photo:    captured || null,
+    };
+    const saved = addCard(card);
+    onCardFound?.(saved);
+    reset();
   };
 
-  const retry = () => {
-    setCapturedImage(null);
-    setMatchedCard(null);
-    setStatus('idle');
+  const reset = () => {
+    setCaptured(null);
+    setShowForm(false);
+    setError('');
+    setName(''); setClub(''); setPosition('ATK');
+    setAttack(75); setDefense(65); setPrice(10);
   };
 
-  // Cleanup on unmount
   useEffect(() => () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    workerRef.current?.terminate();
   }, []);
 
+  // ── UI ───────────────────────────────────────────────
+  const posColors = { GK: '#e67e00', DEF: '#1a6ef5', MID: '#15a050', ATK: '#cc2020' };
+
   return (
-    <div className="flex flex-col items-center gap-5 w-full">
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, width: '100%' }}>
 
       {/* Viewfinder */}
       <div style={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: '320px',
-        height: '420px',
-        background: '#07090f',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        border: '1px solid var(--border)',
+        position: 'relative', width: '100%', maxWidth: 320, height: 400,
+        background: '#05090a', borderRadius: 16, overflow: 'hidden',
+        border: '1px solid rgba(184,255,60,0.12)',
       }}>
+        {/* Video */}
+        <video ref={videoRef} autoPlay playsInline muted style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'cover', display: cameraOn && !captured ? 'block' : 'none', zIndex: 1,
+        }} />
 
-        {/* Video — always rendered, always visible when camera is on */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: cameraOn && !capturedImage ? 'block' : 'none',
-            zIndex: 1,
-          }}
-        />
-
-        {/* Placeholder — only shown when camera is OFF and no captured image */}
-        {!cameraOn && !capturedImage && (
+        {/* Placeholder */}
+        {!cameraOn && !captured && (
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 2,
-            background: '#07090f',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            color: '#4a5568',
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 10, color: '#2a3a2a',
           }}>
-            <div style={{ fontSize: '56px' }}>📷</div>
-            <p style={{ fontSize: '14px' }}>Tap Start Camera below</p>
+            <div style={{ fontSize: 52 }}>📷</div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13 }}>Tap Start Camera below</div>
           </div>
         )}
 
-        {/* Captured image preview */}
-        {capturedImage && (
-          <img
-            src={capturedImage}
-            alt="captured"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 2,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
+        {/* Captured image */}
+        {captured && (
+          <img src={captured} alt="captured" style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', zIndex: 2,
+          }} />
         )}
 
-        {/* Gold targeting frame — only while camera is live */}
-        {cameraOn && !capturedImage && (
+        {/* Gold targeting frame */}
+        {cameraOn && !captured && (
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 3,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
+            position: 'absolute', inset: 0, zIndex: 3, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
           }}>
-            {/* Dark vignette outside the frame */}
             <div style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(0,0,0,0.35)',
-              WebkitMaskImage: 'radial-gradient(ellipse 180px 240px at center, transparent 100%, black 100%)',
-              maskImage: 'radial-gradient(ellipse 180px 240px at center, transparent 100%, black 100%)',
-            }} />
-            {/* The gold frame */}
-            <div style={{
-              width: '180px',
-              height: '240px',
-              borderRadius: '12px',
+              width: 200, height: 270, borderRadius: 10,
               border: '2px solid #FFD700',
-              boxShadow: '0 0 12px rgba(255,215,0,0.4)',
-              position: 'relative',
-            }}>
-              {/* Corner accents */}
-              {[
-                { top: -2, left: -2, borderTop: '3px solid #FFD700', borderLeft: '3px solid #FFD700', borderTopLeftRadius: 12 },
-                { top: -2, right: -2, borderTop: '3px solid #FFD700', borderRight: '3px solid #FFD700', borderTopRightRadius: 12 },
-                { bottom: -2, left: -2, borderBottom: '3px solid #FFD700', borderLeft: '3px solid #FFD700', borderBottomLeftRadius: 12 },
-                { bottom: -2, right: -2, borderBottom: '3px solid #FFD700', borderRight: '3px solid #FFD700', borderBottomRightRadius: 12 },
-              ].map((s, i) => (
-                <div key={i} style={{ position: 'absolute', width: 20, height: 20, ...s }} />
-              ))}
-            </div>
+              boxShadow: '0 0 16px rgba(255,215,0,0.35)',
+            }} />
           </div>
         )}
 
         {/* Scanning overlay */}
         {scanning && (
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 10,
-            background: 'rgba(7,9,15,0.9)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '16px',
+            position: 'absolute', inset: 0, zIndex: 10,
+            background: 'rgba(5,9,10,0.92)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 14,
           }}>
-            <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '18px', letterSpacing: '0.1em' }}>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: '#FFD700', letterSpacing: '0.1em' }}>
               SCANNING {progress}%
-            </p>
-            <div style={{ width: '200px', height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+            </div>
+            <div style={{ width: 200, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ width: `${progress}%`, height: '100%', background: '#FFD700', transition: 'width 0.3s' }} />
             </div>
           </div>
         )}
-
-        {/* Matching overlay */}
-        {status === 'matching' && !scanning && (
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 10,
-            background: 'rgba(7,9,15,0.9)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <p style={{ color: '#60a5fa', fontSize: '22px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
-              MATCHING...
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Result card */}
-      {matchedCard && (
-        <div className="flex flex-col items-center gap-4 w-full">
-          <p className={`font-medium text-sm ${status === 'found_unknown' ? 'text-yellow-400' : 'text-green-400'}`}>
-            {status === 'found_unknown' ? '⚠ Not in database — added as custom card' : '✓ Card identified!'}
-          </p>
-          <CardDisplay card={matchedCard} />
-          <div className="flex gap-3">
-            <button
-              onClick={keepCard}
-              className="px-6 py-2.5 font-bold rounded-xl text-black text-sm transition hover:scale-105"
-              style={{ background: 'var(--gold)' }}
-            >
-              Add to Collection
-            </button>
-            <button
-              onClick={retry}
-              className="px-6 py-2.5 rounded-xl text-gray-400 text-sm transition hover:text-white"
-              style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}
-            >
-              Retry
-            </button>
+      {/* Camera buttons */}
+      {!captured && !showForm && (
+        <div style={{ display: 'flex', gap: 10 }}>
+          {!cameraOn
+            ? <button onClick={startCamera} className="btn-lime" style={{ padding: '12px 28px', fontSize: 16, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05' }}>Start Camera</button>
+            : <>
+                <button onClick={capture} style={{ padding: '12px 24px', fontSize: 16, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05' }}>⊙ Capture</button>
+                <button onClick={stopCamera} style={{ padding: '12px 18px', fontSize: 14, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, cursor: 'pointer', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', color: '#4a6050' }}>Stop</button>
+              </>
+          }
+        </div>
+      )}
+
+      {/* Card details form */}
+      {showForm && (
+        <div style={{ width: '100%', background: '#0d140d', border: '1px solid rgba(184,255,60,0.12)', borderRadius: 16, padding: 20 }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.1em', color: '#b8ff3c', marginBottom: 14, textAlign: 'center' }}>
+            CONFIRM CARD DETAILS
           </div>
-        </div>
-      )}
 
-      {/* Camera controls */}
-      {!capturedImage && (
-        <div className="flex gap-3">
-          {!cameraOn ? (
-            <button
-              onClick={startCamera}
-              className="px-8 py-3 font-bold rounded-xl text-black text-sm transition hover:scale-105 shadow-lg"
-              style={{ background: 'var(--gold)' }}
-            >
-              Start Camera
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={capture}
-                className="px-8 py-3 font-bold rounded-xl text-black text-sm transition hover:scale-105 shadow-lg"
-                style={{ background: 'var(--gold)' }}
-              >
-                ⊙ Scan Card
-              </button>
-              <button
-                onClick={stopCamera}
-                className="px-5 py-3 rounded-xl text-gray-400 text-sm hover:text-white transition"
-                style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}
-              >
-                Stop
-              </button>
-            </>
+          {/* Photo preview */}
+          {captured && (
+            <div style={{ textAlign: 'center', marginBottom: 14 }}>
+              <img src={captured} alt="card" style={{ width: 100, height: 130, objectFit: 'cover', objectPosition: 'top', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)' }} />
+              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: '#4a6050', marginTop: 4 }}>Photo saved ✓</div>
+            </div>
           )}
+
+          {[
+            { label: 'Player Name', value: name, onChange: setName, type: 'text', placeholder: 'e.g. Haaland' },
+            { label: 'Club',        value: club, onChange: setClub, type: 'text', placeholder: 'e.g. Man City' },
+          ].map(f => (
+            <div key={f.label} style={{ marginBottom: 12 }}>
+              <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>{f.label}</label>
+              <input value={f.value} onChange={e => f.onChange(e.target.value)} placeholder={f.placeholder} style={{ width: '100%', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '10px 12px', color: '#fff', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none' }} />
+            </div>
+          ))}
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Position</label>
+            <select value={position} onChange={e => setPosition(e.target.value)} style={{ width: '100%', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '10px 12px', color: posColors[position] || '#fff', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 14, outline: 'none' }}>
+              {['GK','DEF','MID','ATK'].map(p => <option key={p} value={p} style={{ color: posColors[p] }}>{p}</option>)}
+            </select>
+          </div>
+
+          {[
+            { label: 'Attack', value: attack, onChange: setAttack, color: '#ff5757' },
+            { label: 'Defence', value: defense, onChange: setDefense, color: '#4aabff' },
+            { label: 'Price (£M)', value: price, onChange: setPrice, color: '#ffd700' },
+          ].map(f => (
+            <div key={f.label} style={{ marginBottom: 12 }}>
+              <label style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', color: '#4a6050', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span>{f.label}</span>
+                <span style={{ color: f.color, fontWeight: 800 }}>{f.value}{f.label.includes('Price') ? 'M' : ''}</span>
+              </label>
+              <input type="range" min={1} max={f.label.includes('Price') ? 100 : 99} value={f.value}
+                onChange={e => f.onChange(+e.target.value)}
+                style={{ width: '100%', accentColor: f.color }} />
+            </div>
+          ))}
+
+          {error && <div style={{ color: '#ff6060', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+          <button onClick={saveCard} style={{ width: '100%', padding: '14px 0', fontSize: 18, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, cursor: 'pointer', background: '#b8ff3c', border: 'none', color: '#050c05', marginBottom: 8 }}>
+            + Add to Collection
+          </button>
+          <button onClick={reset} style={{ width: '100%', padding: '10px 0', fontSize: 14, borderRadius: 10, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, cursor: 'pointer', background: '#121a12', border: '1px solid rgba(255,255,255,0.07)', color: '#4a6050' }}>
+            Cancel
+          </button>
         </div>
       )}
 
-      {error && (
-        <p className="text-red-400 text-sm text-center max-w-xs">{error}</p>
+      {error && !showForm && (
+        <p style={{ color: '#ff6060', fontSize: 13, textAlign: 'center', maxWidth: 280 }}>{error}</p>
       )}
-
-      <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
 }
