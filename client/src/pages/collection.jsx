@@ -65,25 +65,39 @@ function EmptySlot({ onClick, label }) {
 
 export default function Collection() {
   const {
-    library, removeFromLibrary,
-    teams, activeTeamId, createTeam, renameTeam, deleteTeam, setActiveTeam,
-    addToTeam, removeFromTeam, getTeamBudget,
+    library,          // ← was `collection`
+    removeFromLibrary, // ← was `removeFromCollection`
+    teams,
+    activeTeamId,
+    createTeam,
+    renameTeam,
+    deleteTeam,
+    setActiveTeam,
+    addToTeam,
+    removeFromTeam,
+    getTeamBudget,
   } = useStore();
 
-  const [tab, setTab] = useState('library'); // library | teams
+  // Safe local aliases — guard against undefined during hydration
+  const safeLibrary = Array.isArray(library) ? library : [];
+  const safeTeams   = Array.isArray(teams)   ? teams   : [];
+
+  const [tab, setTab] = useState('library');
   const [search, setSearch] = useState('');
-  const [selectedCard, setSelectedCard] = useState(null); // for adding to team
+  const [selectedCard, setSelectedCard] = useState(null);
   const [newTeamName, setNewTeamName] = useState('');
   const [showNewTeam, setShowNewTeam] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState(null);
   const [editingName, setEditingName] = useState('');
 
-  const activeTeam = teams.find(t => t.id === activeTeamId);
-  const budget = activeTeamId ? getTeamBudget(activeTeamId) : 0;
-  const budgetLeft = BUDGET_MAX - budget;
+  const activeTeam  = safeTeams.find(t => t.id === activeTeamId);
+  const budget      = activeTeamId ? getTeamBudget(activeTeamId) : 0;
+  const budgetLeft  = BUDGET_MAX - budget;
 
-  const filteredLib = library.filter(c =>
-    !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.club?.toLowerCase().includes(search.toLowerCase())
+  const filteredLib = safeLibrary.filter(c =>
+    !search ||
+    c.name?.toLowerCase().includes(search.toLowerCase()) ||
+    c.club?.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleAddToTeam = (card) => {
@@ -109,7 +123,7 @@ export default function Collection() {
           MY <span style={{ color: 'var(--lime)' }}>SQUAD</span>
         </div>
         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 20, color: 'var(--lime)' }}>
-          {library.length} <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 700 }}>cards</span>
+          {safeLibrary.length} <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 700 }}>cards</span>
         </div>
       </div>
 
@@ -128,11 +142,15 @@ export default function Collection() {
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
             <div style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border-dim)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
               <span style={{ color: 'var(--muted)', fontSize: 13 }}>🔍</span>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or club..." style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: 13, padding: '10px 0', fontFamily: "'Barlow',sans-serif" }} />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name or club..."
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: 13, padding: '10px 0', fontFamily: "'Barlow',sans-serif" }}
+              />
             </div>
           </div>
 
-          {/* Active team hint */}
           {activeTeam && (
             <div style={{ background: 'rgba(184,255,60,0.06)', border: '1px solid rgba(184,255,60,0.15)', borderRadius: 10, padding: '8px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 14 }}>⚽</span>
@@ -141,7 +159,7 @@ export default function Collection() {
             </div>
           )}
 
-          {library.length === 0 && (
+          {safeLibrary.length === 0 && (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: 52, marginBottom: 12 }}>📷</div>
               <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 22, color: 'rgba(255,255,255,0.25)' }}>No cards yet</div>
@@ -159,9 +177,19 @@ export default function Collection() {
                 />
                 <div style={{ display: 'flex', gap: 4 }}>
                   {activeTeam && (
-                    <button onClick={() => handleAddToTeam(card)} style={{ background: 'none', border: '1px solid rgba(184,255,60,0.3)', color: 'var(--lime)', cursor: 'pointer', borderRadius: 6, padding: '3px 8px', fontSize: 9, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 }}>+ TEAM</button>
+                    <button
+                      onClick={() => handleAddToTeam(card)}
+                      style={{ background: 'none', border: '1px solid rgba(184,255,60,0.3)', color: 'var(--lime)', cursor: 'pointer', borderRadius: 6, padding: '3px 8px', fontSize: 9, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 }}
+                    >
+                      + TEAM
+                    </button>
                   )}
-                  <button onClick={() => removeFromLibrary(card._id)} style={{ background: 'none', border: '1px solid rgba(255,60,60,0.3)', color: '#ff6060', cursor: 'pointer', borderRadius: 6, padding: '3px 8px', fontSize: 9, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 }}>✕</button>
+                  <button
+                    onClick={() => removeFromLibrary(card._id)}
+                    style={{ background: 'none', border: '1px solid rgba(255,60,60,0.3)', color: '#ff6060', cursor: 'pointer', borderRadius: 6, padding: '3px 8px', fontSize: 9, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 }}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             ))}
@@ -172,7 +200,6 @@ export default function Collection() {
       {/* TEAMS TAB */}
       {tab === 'teams' && (
         <>
-          {/* Team selector */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
             <select
               value={activeTeamId || ''}
@@ -180,7 +207,7 @@ export default function Collection() {
               style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '10px 12px', color: '#fff', fontSize: 14, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, outline: 'none' }}
             >
               <option value="">— Select team —</option>
-              {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {safeTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <button onClick={() => setShowNewTeam(true)} className="btn-lime" style={{ padding: '10px 16px', fontSize: 13, borderRadius: 10 }}>+ New</button>
           </div>
@@ -211,7 +238,6 @@ export default function Collection() {
 
           {activeTeam && (
             <>
-              {/* Budget bar */}
               <div style={{ background: 'var(--surface2)', borderRadius: 12, padding: '12px 16px', marginBottom: 14, border: '1px solid var(--border-dim)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em' }}>BUDGET</span>
@@ -224,11 +250,16 @@ export default function Collection() {
                 </div>
               </div>
 
-              {/* Team actions */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 {editingTeamId === activeTeam.id ? (
                   <>
-                    <input value={editingName} onChange={e => setEditingName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { renameTeam(activeTeam.id, editingName); setEditingTeamId(null); } }} style={{ flex: 1, background: 'var(--surface3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: 13, fontFamily: "'Barlow Condensed',sans-serif", outline: 'none' }} autoFocus />
+                    <input
+                      value={editingName}
+                      onChange={e => setEditingName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { renameTeam(activeTeam.id, editingName); setEditingTeamId(null); } }}
+                      style={{ flex: 1, background: 'var(--surface3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: 13, fontFamily: "'Barlow Condensed',sans-serif", outline: 'none' }}
+                      autoFocus
+                    />
                     <button onClick={() => { renameTeam(activeTeam.id, editingName); setEditingTeamId(null); }} className="btn-lime" style={{ padding: '8px 14px', fontSize: 12, borderRadius: 8 }}>Save</button>
                   </>
                 ) : (
@@ -239,17 +270,16 @@ export default function Collection() {
                 )}
               </div>
 
-              {/* Team players grid */}
               <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: 10 }}>
-                PLAYERS ({activeTeam.players.length})
+                PLAYERS ({Array.isArray(activeTeam.players) ? activeTeam.players.length : 0})
               </div>
-              {activeTeam.players.length === 0 && (
+              {(!activeTeam.players || activeTeam.players.length === 0) && (
                 <div style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--muted)', fontFamily: "'Barlow Condensed',sans-serif", fontSize: 13 }}>
                   Go to Library tab and tap "+ TEAM" to add players
                 </div>
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-                {activeTeam.players.map(card => (
+                {Array.isArray(activeTeam.players) && activeTeam.players.map(card => (
                   <MiniCard
                     key={card._id}
                     card={card}
