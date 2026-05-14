@@ -26,25 +26,7 @@ export default function Home() {
   return (
     <div className="page-content relative" style={{ minHeight: '100dvh' }}>
 
-      {/* Pitch lines SVG background */}
-      <div className="pitch-bg">
-        <svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice" fill="none" stroke="white" strokeWidth="1">
-          <rect x="20" y="60" width="360" height="680" rx="4"/>
-          <line x1="20" y1="400" x2="380" y2="400"/>
-          <circle cx="200" cy="400" r="60"/>
-          <circle cx="200" cy="400" r="4" fill="white"/>
-          <rect x="120" y="60" width="160" height="80"/>
-          <rect x="160" y="60" width="80" height="40"/>
-          <rect x="120" y="660" width="160" height="80"/>
-          <rect x="160" y="700" width="80" height="40"/>
-          <circle cx="200" cy="140" r="4" fill="white"/>
-          <circle cx="200" cy="660" r="4" fill="white"/>
-          <path d="M20 60 Q30 60 30 70"/>
-          <path d="M380 60 Q370 60 370 70"/>
-          <path d="M20 740 Q30 740 30 730"/>
-          <path d="M380 740 Q370 740 370 730"/>
-        </svg>
-      </div>
+
 
       <div style={{ position: 'relative', zIndex: 1, padding: '0 20px', maxWidth: 480, margin: '0 auto' }}>
 
