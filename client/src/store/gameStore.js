@@ -6,11 +6,11 @@ const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(
 export const POSITIONS = ['GK', 'DEF', 'MID', 'ATK'];
 
 export const POWERUPS = [
-  { id: 'pu_atk10',  name: 'Speed Boost',     emoji: '⚡', desc: '+10 ATK all squad', atk: 10, def: 0,  cost: 8  },
-  { id: 'pu_def10',  name: 'Iron Wall',        emoji: '🛡️', desc: '+10 DEF all squad', atk: 0,  def: 10, cost: 8  },
-  { id: 'pu_atk15',  name: 'Golden Boot',      emoji: '⭐', desc: '+15 ATK all squad', atk: 15, def: 0,  cost: 12 },
-  { id: 'pu_def15',  name: 'Titanium Shield',  emoji: '🔰', desc: '+15 DEF all squad', atk: 0,  def: 15, cost: 12 },
-  { id: 'pu_both10', name: 'Super Squad',       emoji: '🚀', desc: '+10 ATK & DEF all', atk: 10, def: 10, cost: 18 },
+  { id: 'pu_atk10',  name: 'Speed Boost',    emoji: '⚡', desc: '+10 ATK all squad', atk: 10, def: 0,  cost: 8  },
+  { id: 'pu_def10',  name: 'Iron Wall',       emoji: '🛡️', desc: '+10 DEF all squad', atk: 0,  def: 10, cost: 8  },
+  { id: 'pu_atk15',  name: 'Golden Boot',     emoji: '⭐', desc: '+15 ATK all squad', atk: 15, def: 0,  cost: 12 },
+  { id: 'pu_def15',  name: 'Titanium Shield', emoji: '🔰', desc: '+15 DEF all squad', atk: 0,  def: 15, cost: 12 },
+  { id: 'pu_both10', name: 'Super Squad',     emoji: '🚀', desc: '+10 ATK & DEF all', atk: 10, def: 10, cost: 18 },
 ];
 
 export const BUDGET_MAX = 100; // £100M
@@ -66,28 +66,31 @@ export const useStore = create(
       cards: [],
       addCard: (card) => {
         const c = { id: uid(), ...card };
-        set(s => ({ cards: [...s.cards, c] }));
+        set(s => ({ cards: [...(s.cards || []), c] }));
         return c;
       },
       updateCard: (id, updates) =>
-        set(s => ({ cards: s.cards.map(c => c.id === id ? { ...c, ...updates } : c) })),
+        set(s => ({ cards: (s.cards || []).map(c => c.id === id ? { ...c, ...updates } : c) })),
       deleteCard: (id) =>
-        set(s => ({ cards: s.cards.filter(c => c.id !== id) })),
+        set(s => ({ cards: (s.cards || []).filter(c => c.id !== id) })),
 
       // ── Teams ──
       teams: [],
       saveTeam: (team) => {
         const id = team.id || uid();
         const t = { ...team, id };
-        set(s => ({
-          teams: s.teams.find(x => x.id === id)
-            ? s.teams.map(x => x.id === id ? t : x)
-            : [...s.teams, t],
-        }));
+        set(s => {
+          const teams = s.teams || [];
+          return {
+            teams: teams.find(x => x.id === id)
+              ? teams.map(x => x.id === id ? t : x)
+              : [...teams, t],
+          };
+        });
         return t;
       },
       deleteTeam: (id) =>
-        set(s => ({ teams: s.teams.filter(t => t.id !== id) })),
+        set(s => ({ teams: (s.teams || []).filter(t => t.id !== id) })),
 
       // ── Active game (not persisted) ──
       gameSetup: null,
@@ -96,7 +99,17 @@ export const useStore = create(
     }),
     {
       name: 'card-attax-v2',
-      partialState: ['cards', 'teams'],
+      // FIX: 'partialState' is not valid — must be 'partialize'
+      partialize: (state) => ({
+        cards: state.cards || [],
+        teams: state.teams || [],
+      }),
+      // Safely merge persisted data so arrays are never undefined on load
+      merge: (persisted, current) => ({
+        ...current,
+        cards: persisted?.cards || [],
+        teams: persisted?.teams || [],
+      }),
     }
   )
 );
