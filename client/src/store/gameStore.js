@@ -15,7 +15,8 @@ export const POWERUPS = [
 ];
 
 export function applyPowerUps(card, powerUpIds = []) {
-  const bonus = powerUpIds.reduce((acc, pid) => {
+  const ids = Array.isArray(powerUpIds) ? powerUpIds : [];
+  const bonus = ids.reduce((acc, pid) => {
     const p = POWERUPS.find(x => x.id === pid);
     if (p) { acc.atk += p.atk; acc.def += p.def; }
     return acc;
@@ -27,60 +28,60 @@ export function applyPowerUps(card, powerUpIds = []) {
   };
 }
 
+const safeArray = (v) => (Array.isArray(v) ? v : []);
+
 export const useStore = create(
   persist(
     (set, get) => ({
-      // ── Player library (all scanned cards, no premade) ──
-      library: [], // { _id, name, position, attack, defense, price, photo, club, nation }
+      // ── Player library ──
+      library: [],
 
       addToLibrary: (card) => {
         const c = { ...card, _id: card._id || uid() };
-        set(s => ({ library: [...s.library, c] }));
+        set(s => ({ library: [...safeArray(s.library), c] }));
         return c;
       },
       updateLibraryCard: (id, updates) => {
-        set(s => ({ library: s.library.map(c => c._id === id ? { ...c, ...updates } : c) }));
+        set(s => ({ library: safeArray(s.library).map(c => c._id === id ? { ...c, ...updates } : c) }));
       },
       removeFromLibrary: (id) => {
-        // Also remove from any teams
-        const teams = get().teams.map(t => ({
+        const teams = safeArray(get().teams).map(t => ({
           ...t,
-          players: t.players.filter(p => p._id !== id),
+          players: safeArray(t.players).filter(p => p._id !== id),
         }));
-        set(s => ({ library: s.library.filter(c => c._id !== id), teams }));
+        set(s => ({ library: safeArray(s.library).filter(c => c._id !== id), teams }));
       },
 
       // ── Teams ──
-      teams: [], // { id, name, players: [card] }
+      teams: [],
       activeTeamId: null,
 
       createTeam: (name) => {
         const team = { id: uid(), name, players: [] };
-        set(s => ({ teams: [...s.teams, team], activeTeamId: team.id }));
+        set(s => ({ teams: [...safeArray(s.teams), team], activeTeamId: team.id }));
         return team;
       },
       renameTeam: (id, name) => {
-        set(s => ({ teams: s.teams.map(t => t.id === id ? { ...t, name } : t) }));
+        set(s => ({ teams: safeArray(s.teams).map(t => t.id === id ? { ...t, name } : t) }));
       },
       deleteTeam: (id) => {
         set(s => ({
-          teams: s.teams.filter(t => t.id !== id),
-          activeTeamId: s.activeTeamId === id ? (s.teams[0]?.id || null) : s.activeTeamId,
+          teams: safeArray(s.teams).filter(t => t.id !== id),
+          activeTeamId: s.activeTeamId === id ? (safeArray(s.teams)[0]?.id || null) : s.activeTeamId,
         }));
       },
       setActiveTeam: (id) => set({ activeTeamId: id }),
 
       addToTeam: (teamId, card) => {
-        const team = get().teams.find(t => t.id === teamId);
+        const team = safeArray(get().teams).find(t => t.id === teamId);
         if (!team) return false;
-        // Check budget
-        const currentBudget = team.players.reduce((s, c) => s + (c.price || 0), 0);
+        const players = safeArray(team.players);
+        const currentBudget = players.reduce((s, c) => s + (c.price || 0), 0);
         if (currentBudget + (card.price || 0) > BUDGET_MAX) return false;
-        // No duplicates
-        if (team.players.some(p => p._id === card._id)) return false;
+        if (players.some(p => p._id === card._id)) return false;
         set(s => ({
-          teams: s.teams.map(t => t.id === teamId
-            ? { ...t, players: [...t.players, card] }
+          teams: safeArray(s.teams).map(t => t.id === teamId
+            ? { ...t, players: [...safeArray(t.players), card] }
             : t
           ),
         }));
@@ -88,17 +89,17 @@ export const useStore = create(
       },
       removeFromTeam: (teamId, cardId) => {
         set(s => ({
-          teams: s.teams.map(t => t.id === teamId
-            ? { ...t, players: t.players.filter(p => p._id !== cardId) }
+          teams: safeArray(s.teams).map(t => t.id === teamId
+            ? { ...t, players: safeArray(t.players).filter(p => p._id !== cardId) }
             : t
           ),
         }));
       },
 
       getTeamBudget: (teamId) => {
-        const team = get().teams.find(t => t.id === teamId);
+        const team = safeArray(get().teams).find(t => t.id === teamId);
         if (!team) return 0;
-        return team.players.reduce((s, c) => s + (c.price || 0), 0);
+        return safeArray(team.players).reduce((s, c) => s + (c.price || 0), 0);
       },
 
       // ── Economy ──
@@ -115,17 +116,18 @@ export const useStore = create(
       activePowerUps: [],
       buyPowerUp: (id) => {
         const pu = POWERUPS.find(p => p.id === id);
-        if (!pu || get().ownedPowerUps.includes(id)) return false;
+        if (!pu || safeArray(get().ownedPowerUps).includes(id)) return false;
         if (!get().spendCoins(pu.cost)) return false;
-        set(s => ({ ownedPowerUps: [...s.ownedPowerUps, id] }));
+        set(s => ({ ownedPowerUps: [...safeArray(s.ownedPowerUps), id] }));
         return true;
       },
       toggleActivePU: (id) => {
-        set(s => ({
-          activePowerUps: s.activePowerUps.includes(id)
-            ? s.activePowerUps.filter(x => x !== id)
-            : [...s.activePowerUps, id],
-        }));
+        set(s => {
+          const cur = safeArray(s.activePowerUps);
+          return {
+            activePowerUps: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id],
+          };
+        });
       },
 
       // ── Game session (ephemeral) ──
@@ -137,23 +139,23 @@ export const useStore = create(
       clearGame: () => set({ sessionId: null, gameState: null, lastResult: null }),
     }),
     {
-      name: 'match-attax-v6',
+      name: 'match-attax-v7',  // bumped version to clear any corrupt persisted state
       partialize: (s) => ({
-        library:       s.library       || [],
-        teams:         s.teams         || [],
-        activeTeamId:  s.activeTeamId  || null,
-        coins:         s.coins         ?? 500,
-        ownedPowerUps: s.ownedPowerUps || [],
-        activePowerUps:s.activePowerUps|| [],
+        library:        safeArray(s.library),
+        teams:          safeArray(s.teams),
+        activeTeamId:   s.activeTeamId  || null,
+        coins:          s.coins         ?? 500,
+        ownedPowerUps:  safeArray(s.ownedPowerUps),
+        activePowerUps: safeArray(s.activePowerUps),
       }),
       merge: (persisted, current) => ({
         ...current,
-        library:       persisted?.library       || [],
-        teams:         persisted?.teams         || [],
-        activeTeamId:  persisted?.activeTeamId  || null,
-        coins:         persisted?.coins         ?? 500,
-        ownedPowerUps: persisted?.ownedPowerUps || [],
-        activePowerUps:persisted?.activePowerUps|| [],
+        library:        safeArray(persisted?.library),
+        teams:          safeArray(persisted?.teams),
+        activeTeamId:   persisted?.activeTeamId  || null,
+        coins:          persisted?.coins         ?? 500,
+        ownedPowerUps:  safeArray(persisted?.ownedPowerUps),
+        activePowerUps: safeArray(persisted?.activePowerUps),
       }),
     }
   )
