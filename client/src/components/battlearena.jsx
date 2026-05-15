@@ -1,382 +1,404 @@
 import { useState, useEffect } from 'react';
-import { useStore, applyPowerUps } from '../store/gameStore';
+import { POSITION_LABELS, POS_COLOR } from '../store/gameStore';
 
-const POS_COLOR = {
-  GK:'#e67e00', CB:'#1a6ef5', LB:'#1a6ef5', RB:'#1a6ef5',
-  CDM:'#15a050', CM:'#15a050', CAM:'#e05010', SS:'#e05010',
-  LW:'#cc2020', RW:'#cc2020', ST:'#aa1010',
-};
+// ─── Formation grid positions ────────────────────────────────────────────────
+// Each slot: { slot, pos, pRow, pCol, cRow, cCol }
+// Grid: 5 cols × 4 rows (CSS grid, 1-indexed)
+// Player half: GK at bottom (row 4), attackers at top (row 1)
+// CPU half:    GK at top (row 1), attackers at bottom (row 4)
+const FORMATION = [
+  { slot: 0,  pos: 'GK', pRow: 4, pCol: 3, cRow: 1, cCol: 3 },
+  { slot: 1,  pos: 'LB', pRow: 3, pCol: 1, cRow: 2, cCol: 1 },
+  { slot: 2,  pos: 'CB', pRow: 3, pCol: 2, cRow: 2, cCol: 2 },
+  { slot: 3,  pos: 'CB', pRow: 3, pCol: 4, cRow: 2, cCol: 4 },
+  { slot: 4,  pos: 'RB', pRow: 3, pCol: 5, cRow: 2, cCol: 5 },
+  { slot: 5,  pos: 'LM', pRow: 2, pCol: 1, cRow: 3, cCol: 1 },
+  { slot: 6,  pos: 'CM', pRow: 2, pCol: 3, cRow: 3, cCol: 3 },
+  { slot: 7,  pos: 'RM', pRow: 2, pCol: 5, cRow: 3, cCol: 5 },
+  { slot: 8,  pos: 'LW', pRow: 1, pCol: 2, cRow: 4, cCol: 2 },
+  { slot: 9,  pos: 'ST', pRow: 1, pCol: 3, cRow: 4, cCol: 3 },
+  { slot: 10, pos: 'RW', pRow: 1, pCol: 4, cRow: 4, cCol: 4 },
+];
 
-// ── Card components ────────────────────────────────────────────────────────────
-function CardFaceDown({ small }) {
-  const w = small ? 58 : 72;
-  const h = small ? 80 : 100;
+// ─── Tiny formation card ─────────────────────────────────────────────────────
+function FormCard({ card, faceDown, active, glow }) {
+  const W = 46, H = 64;
+  const border = active
+    ? '2px solid #b8ff3c'
+    : glow === 'win'  ? '2px solid #4aff80'
+    : glow === 'lose' ? '1.5px solid #ff5757'
+    : '1px solid rgba(255,255,255,0.1)';
+  const shadow = glow === 'win'  ? '0 0 10px rgba(74,255,128,0.5)'
+               : glow === 'lose' ? '0 0 6px rgba(255,87,87,0.3)'
+               : active ? '0 0 8px rgba(184,255,60,0.4)' : 'none';
+
+  if (faceDown || !card) {
+    return (
+      <div style={{
+        width: W, height: H, borderRadius: 6, border,
+        background: card
+          ? 'repeating-linear-gradient(45deg,#0d1e0d 0,#0d1e0d 4px,#091509 4px,#091509 8px)'
+          : 'rgba(255,255,255,0.03)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: card ? 18 : 12, opacity: card ? 0.75 : 0.25, transition: 'all 0.3s',
+      }}>
+        {card ? '🂠' : '–'}
+      </div>
+    );
+  }
+
+  const posColor = POS_COLOR[card.position] || '#555';
   return (
     <div style={{
-      width: w, height: h, borderRadius: 8, flexShrink: 0,
-      background: 'repeating-linear-gradient(45deg,#0a1a0a,#0a1a0a 5px,#091209 5px,#091209 10px)',
-      border: '1.5px solid rgba(74,171,255,0.2)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: small ? 16 : 20, opacity: 0.7,
+      width: W, height: H, borderRadius: 6, overflow: 'hidden', border, boxShadow: shadow,
+      background: 'var(--surface2)', transition: 'all 0.35s ease',
     }}>
-      🂠
-    </div>
-  );
-}
-
-function CardFaceUp({ card, glow, small, selected, onClick }) {
-  const w = small ? 58 : 72;
-  const posColor = POS_COLOR[card?.position] || '#555';
-  return (
-    <div onClick={onClick} style={{
-      width: w, borderRadius: 8, overflow: 'hidden', flexShrink: 0,
-      background: 'var(--surface2)',
-      border: selected ? '2px solid var(--lime)' : glow === 'win' ? '2px solid #4aff80' : glow === 'lose' ? '2px solid #ff5757' : '1.5px solid rgba(255,255,255,0.1)',
-      boxShadow: glow === 'win' ? '0 0 12px rgba(74,255,128,0.4)' : glow === 'lose' ? '0 0 8px rgba(255,87,87,0.3)' : 'none',
-      transform: selected ? 'translateY(-6px) scale(1.05)' : 'none',
-      cursor: onClick ? 'pointer' : 'default',
-      transition: 'all 0.2s ease',
-    }}>
-      {card?.photo
-        ? <img src={card.photo} alt={card.name} style={{ width: '100%', height: small ? 44 : 54, objectFit: 'cover', objectPosition: 'top', display: 'block' }} />
-        : <div style={{ width: '100%', height: small ? 44 : 54, background: '#0d140d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#1a2a1a' }}>👤</div>
+      {card.photo
+        ? <img src={card.photo} alt={card.name} style={{ width: '100%', height: 36, objectFit: 'cover', objectPosition: 'top', display: 'block' }} />
+        : <div style={{ width: '100%', height: 36, background: '#0d140d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
       }
-      <div style={{ padding: '3px 4px 5px' }}>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 7.5, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>{card?.name}</div>
-        <div style={{ display: 'flex', gap: 3, marginBottom: 1 }}>
-          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 7, color: '#ff5757', fontWeight: 700 }}>ATK {card?.attack}</span>
+      <div style={{ padding: '2px 3px 3px' }}>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontWeight: 800, fontSize: 7, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {card.name?.split(' ').slice(-1)[0] || card.name}
         </div>
-        <div style={{ display: 'flex', gap: 3 }}>
-          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 7, color: '#4aabff', fontWeight: 700 }}>DEF {card?.defense}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 1 }}>
+          <span style={{ fontSize: 6, color: '#ff5c5c', fontFamily: "'Barlow Condensed'", fontWeight: 700 }}>⚔{card.attack}</span>
+          <span style={{ fontSize: 6, color: '#4aabff', fontFamily: "'Barlow Condensed'", fontWeight: 700 }}>🛡{card.defense}</span>
         </div>
         <div style={{ marginTop: 2 }}>
-          <span style={{ background: posColor, color: '#fff', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 6, padding: '1px 3px', borderRadius: 3 }}>{card?.position}</span>
+          <span style={{ background: posColor, color: '#fff', fontSize: 5.5, fontFamily: "'Barlow Condensed'", fontWeight: 800, padding: '0 3px', borderRadius: 2 }}>
+            {card.position}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Score sidebar ─────────────────────────────────────────────────────────────
-function ScoreSide({ playerGoals, cpuGoals }) {
+// ─── One half of the pitch ───────────────────────────────────────────────────
+function PitchHalf({ cards, isCpu, revealedSlots, activeSlot, results }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(5, 1fr)',
+      gridTemplateRows: 'repeat(4, 1fr)',
+      gap: 3,
+      padding: '6px 4px',
+      flex: 1,
+      minHeight: 200,
+    }}>
+      {FORMATION.map(({ slot, pos, pRow, pCol, cRow, cCol }) => {
+        const row = isCpu ? cRow : pRow;
+        const col = isCpu ? cCol : pCol;
+        const card = cards[slot] || null;
+        const revealed = revealedSlots.includes(slot);
+        const active = slot === activeSlot;
+        const result = results[slot];
+        const glow = result
+          ? (isCpu
+            ? (result.cpuScored ? 'win' : 'lose')
+            : (result.playerScored ? 'win' : 'lose'))
+          : undefined;
+
+        return (
+          <div key={slot} style={{ gridRow: row, gridColumn: col, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 5.5, color: 'rgba(255,255,255,0.22)', lineHeight: 1 }}>
+              {pos}
+            </span>
+            <FormCard card={card} faceDown={!revealed} active={active} glow={glow} />
+            {result && (
+              <span style={{ fontSize: 8, lineHeight: 1, marginTop: 1 }}>
+                {isCpu ? (result.cpuScored ? '⚽' : result.playerScored ? '🛡️' : '') : (result.playerScored ? '⚽' : result.cpuScored ? '🛡️' : '')}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Score sidebar ────────────────────────────────────────────────────────────
+function ScoreSide({ playerGoals, cpuGoals, round }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: 12, padding: '8px 6px',
-      background: 'rgba(0,0,0,0.3)', borderRadius: 12,
-      border: '1px solid rgba(255,255,255,0.06)',
-      minWidth: 44,
+      gap: 6, padding: '8px 5px',
+      background: 'rgba(0,0,0,0.35)', borderRadius: 10,
+      border: '1px solid rgba(255,255,255,0.05)',
+      minWidth: 42,
     }}>
+      <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.05em' }}>RND</div>
+      <div style={{ fontFamily: "'Barlow Condensed'", fontWeight: 900, fontSize: 20, color: 'var(--lime)', lineHeight: 1 }}>{round}</div>
+      <div style={{ width: '70%', height: 1, background: 'rgba(255,255,255,0.08)' }} />
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 28, color: '#ff5757', lineHeight: 1 }}>{cpuGoals}</div>
-        <div style={{ fontSize: 12 }}>⚽</div>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 8, color: 'var(--muted)', fontWeight: 700 }}>CPU</div>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontWeight: 900, fontSize: 26, color: '#ff5757', lineHeight: 1 }}>{cpuGoals}</div>
+        <div style={{ fontSize: 10 }}>⚽</div>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 6.5, color: 'var(--muted)', fontWeight: 700 }}>CPU</div>
       </div>
-      <div style={{ width: '80%', height: 1, background: 'rgba(255,255,255,0.1)' }} />
+      <div style={{ width: '70%', height: 1, background: 'rgba(255,255,255,0.08)' }} />
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 28, color: '#4aff80', lineHeight: 1 }}>{playerGoals}</div>
-        <div style={{ fontSize: 12 }}>⚽</div>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 8, color: 'var(--muted)', fontWeight: 700 }}>YOU</div>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontWeight: 900, fontSize: 26, color: '#4aff80', lineHeight: 1 }}>{playerGoals}</div>
+        <div style={{ fontSize: 10 }}>⚽</div>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 6.5, color: 'var(--muted)', fontWeight: 700 }}>YOU</div>
       </div>
     </div>
   );
 }
 
-// ── Main BattleArena ──────────────────────────────────────────────────────────
-export default function BattleArena({ playerDeck: initialPlayerDeck = [], cpuDeck: initialCpuDeck = [], activePowerUps = [], onGameEnd }) {
-  const [phase, setPhase] = useState('coinflip'); // coinflip | attack | defend | result | over
-  const [flipping, setFlipping] = useState(true);
-  const [coinResult, setCoinResult] = useState(null);
+// ─── Main BattleArena ─────────────────────────────────────────────────────────
+export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd }) {
+  // Pad both sides to 11 slots
+  const pCards = [...Array(11)].map((_, i) => playerCards[i] || null);
+  const cCards = [...Array(11)].map((_, i) => cpuCards[i] || null);
 
-  // Guard: ensure arrays are always arrays before mapping
-  const [playerDeck, setPlayerDeck] = useState(() =>
-    (Array.isArray(initialPlayerDeck) ? initialPlayerDeck : []).map(c => applyPowerUps(c, activePowerUps))
-  );
-  const [cpuDeck, setCpuDeck] = useState(() =>
-    (Array.isArray(initialCpuDeck) ? initialCpuDeck : []).map(c => applyPowerUps(c, activePowerUps))
-  );
-
-  // Cards played on board (shown face-up)
-  const [playerBoard, setPlayerBoard] = useState([]); // { card, role: 'atk'|'def', scored }
-  const [cpuBoard, setCpuBoard] = useState([]);
-
+  const [phase, setPhase]             = useState('coinflip'); // coinflip|ready|revealing|result|over
+  const [flipping, setFlipping]       = useState(true);
+  const [coinResult, setCoinResult]   = useState(null);
+  const [currentSlot, setCurrentSlot] = useState(0);
+  const [revealedSlots, setRevealed]  = useState([]);
+  const [results, setResults]         = useState({});
   const [playerGoals, setPlayerGoals] = useState(0);
-  const [cpuGoals, setCpuGoals] = useState(0);
-  const [round, setRound] = useState(1);
-  const [currentAttacker, setCurrentAttacker] = useState('player');
-  const [selected, setSelected] = useState(null);
-  const [lastResult, setLastResult] = useState(null);
-  const [resultMsg, setResultMsg] = useState(null);
+  const [cpuGoals, setCpuGoals]       = useState(0);
+  const [resultMsg, setResultMsg]     = useState(null);
 
   // Coin flip on mount
   useEffect(() => {
     const t = setTimeout(() => {
       const heads = Math.random() < 0.5;
-      const firstAttacker = heads ? 'player' : 'cpu';
-      setCoinResult({ heads, firstAttacker });
-      setCurrentAttacker(firstAttacker);
+      setCoinResult(heads);
       setFlipping(false);
-      setTimeout(() => setPhase(firstAttacker === 'player' ? 'attack' : 'defend'), 2000);
+      setTimeout(() => setPhase('ready'), 1800);
     }, 1800);
     return () => clearTimeout(t);
   }, []);
 
-  const cpuPickCard = (deck, role) => {
-    if (!deck || deck.length === 0) return null;
-    if (Math.random() < 0.25) return deck[Math.floor(Math.random() * deck.length)];
-    return [...deck].sort((a, b) =>
-      role === 'atk' ? b.attack - a.attack : b.defense - a.defense
-    )[0];
-  };
+  const playNextRound = () => {
+    if (phase !== 'ready') return;
+    const slot = currentSlot;
+    const pCard = pCards[slot];
+    const cCard = cCards[slot];
 
-  const resolveRound = (playerCard, playerRole, cpuCard) => {
-    const attackerIsPlayer = playerRole === 'attack';
-    const atk = attackerIsPlayer ? playerCard.attack : cpuCard.attack;
-    const def = attackerIsPlayer ? cpuCard.defense : playerCard.defense;
-    const goal = atk > def;
+    setRevealed(prev => [...prev, slot]);
+    setPhase('revealing');
 
-    // Snapshot the next deck sizes before any state updates
-    const nextPlayerDeck = playerDeck.filter(c => c._id !== playerCard._id);
-    const nextCpuDeck = cpuDeck.filter(c => c._id !== cpuCard._id);
-
-    // Update decks
-    setPlayerDeck(nextPlayerDeck);
-    setCpuDeck(nextCpuDeck);
-
-    // Add to boards
-    const cpuRole = attackerIsPlayer ? 'defend' : 'attack';
-    setPlayerBoard(b => [...b, { card: playerCard, role: playerRole, scored: goal && attackerIsPlayer }]);
-    setCpuBoard(b => [...b, { card: cpuCard, role: cpuRole, scored: goal && !attackerIsPlayer }]);
-
-    if (goal) {
-      if (attackerIsPlayer) setPlayerGoals(g => g + 1);
-      else setCpuGoals(g => g + 1);
-    }
-
-    const msg = goal
-      ? attackerIsPlayer
-        ? { text: `⚽ GOAL! Your ATK ${atk} beat CPU DEF ${def}!`, color: '#4aff80' }
-        : { text: `💀 CPU SCORED! ATK ${atk} vs your DEF ${def}`, color: '#ff5757' }
-      : { text: `🛡️ SAVED! DEF ${def} stopped ATK ${atk}`, color: '#4aabff' };
-
-    setResultMsg(msg);
-    setLastResult({ atk, def, goal, attackerIsPlayer });
-    setSelected(null);
-    setRound(r => r + 1);
-    setPhase('result');
-
-    // Use snapshotted values — no nested setState needed
     setTimeout(() => {
-      if (nextPlayerDeck.length === 0 || nextCpuDeck.length === 0) {
-        setPhase('over');
+      let playerScored = false;
+      let cpuScored    = false;
+      let msgParts     = [];
+      const pos        = POSITION_LABELS[slot];
+
+      if (!pCard && !cCard) {
+        msgParts.push(`${pos}: Both empty — skipped`);
+      } else if (!pCard) {
+        cpuScored = true;
+        msgParts.push(`${pos}: 💀 CPU scores — no player in your ${pos} slot!`);
+      } else if (!cCard) {
+        playerScored = true;
+        msgParts.push(`${pos}: ⚽ You score — no CPU ${pos}!`);
       } else {
-        const nextAttacker = attackerIsPlayer ? 'cpu' : 'player';
-        setCurrentAttacker(nextAttacker);
-        setPhase(nextAttacker === 'player' ? 'attack' : 'defend');
+        playerScored = pCard.attack  > cCard.defense;
+        cpuScored    = cCard.attack  > pCard.defense;
+
+        if (playerScored && cpuScored) {
+          msgParts.push(`${pos}: ⚔️ BOTH SCORE! Your ATK ${pCard.attack} > CPU DEF ${cCard.defense} | CPU ATK ${cCard.attack} > Your DEF ${pCard.defense}`);
+        } else if (playerScored) {
+          msgParts.push(`${pos}: ⚽ YOUR GOAL! ATK ${pCard.attack} beats DEF ${cCard.defense}`);
+        } else if (cpuScored) {
+          msgParts.push(`${pos}: 💀 CPU GOAL! ATK ${cCard.attack} beats DEF ${pCard.defense}`);
+        } else {
+          msgParts.push(`${pos}: 🛡️ Clean sheet — ATK ${pCard.attack} vs DEF ${cCard.defense}`);
+        }
       }
-    }, 2200);
+
+      const newPG = playerGoals + (playerScored ? 1 : 0);
+      const newCG = cpuGoals    + (cpuScored    ? 1 : 0);
+      setPlayerGoals(newPG);
+      setCpuGoals(newCG);
+      setResults(prev => ({ ...prev, [slot]: { playerScored, cpuScored, pCard, cCard } }));
+      setResultMsg({ text: msgParts[0], playerScored, cpuScored });
+      setPhase('result');
+
+      setTimeout(() => {
+        if (slot >= 10) {
+          setPhase('over');
+        } else {
+          setCurrentSlot(slot + 1);
+          setPhase('ready');
+        }
+      }, 2400);
+    }, 700);
   };
 
-  const handlePlayerPlay = () => {
-    if (!selected) return;
-    const isAttacking = phase === 'attack';
-    const cpuRole = isAttacking ? 'defend' : 'attack';
-    const cpuCard = cpuPickCard(cpuDeck, cpuRole === 'attack' ? 'atk' : 'def');
-    if (!cpuCard) return;
-    resolveRound(selected, isAttacking ? 'attack' : 'defend', cpuCard);
-  };
-
-  // ── COIN FLIP SCREEN ─────────────────────────────────────────────────────
+  // ── COIN FLIP ──────────────────────────────────────────────────────────────
   if (phase === 'coinflip') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 340, gap: 24, padding: 24 }}>
-        <div style={{
-          width: 110, height: 110, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 58, border: '3px solid #ffd700', background: '#1a1200',
-          animation: flipping ? 'coinFlip 1.5s ease-in-out' : 'none',
-          boxShadow: '0 0 30px rgba(255,215,0,0.2)',
-        }}>
-          {flipping ? '🪙' : coinResult?.heads ? '🟡' : '⚪'}
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:320, gap:20, padding:24 }}>
+        <div style={{ fontSize:64, animation: flipping ? 'coinFlip 1.2s ease-in-out infinite' : 'none' }}>
+          {flipping ? '🪙' : coinResult ? '🟡' : '⚪'}
         </div>
-        {!flipping && coinResult && (
+        {!flipping && (
           <>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 36, color: '#fff' }}>
-              {coinResult.heads ? 'HEADS!' : 'TAILS!'}
+            <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:36, color:'#fff' }}>
+              {coinResult ? 'HEADS!' : 'TAILS!'}
             </div>
-            <div style={{
-              fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 18,
-              color: coinResult.firstAttacker === 'player' ? '#ff5757' : '#4aabff',
-              textAlign: 'center', lineHeight: 1.4,
-            }}>
-              {coinResult.firstAttacker === 'player'
-                ? '🔴 YOU ATTACK FIRST!'
-                : '🔵 CPU ATTACKS FIRST!'}
+            <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:18, color:'var(--lime)' }}>
+              KICK OFF! ⚽
             </div>
           </>
         )}
-        {flipping && (
-          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 16, color: 'var(--muted)', letterSpacing: '0.1em' }}>
-            FLIPPING...
-          </div>
-        )}
-        <style>{`
-          @keyframes coinFlip {
-            0%   { transform: rotateY(0deg) scale(1); }
-            25%  { transform: rotateY(180deg) scale(1.15); }
-            50%  { transform: rotateY(360deg) scale(1); }
-            75%  { transform: rotateY(540deg) scale(1.15); }
-            100% { transform: rotateY(720deg) scale(1); }
-          }
-        `}</style>
+        {flipping && <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:14, color:'var(--muted)', letterSpacing:'0.1em' }}>TOSSING...</div>}
+        <style>{`@keyframes coinFlip{0%{transform:rotateY(0) scale(1)}50%{transform:rotateY(180deg) scale(1.15)}100%{transform:rotateY(360deg) scale(1)}}`}</style>
       </div>
     );
   }
 
-  // ── GAME OVER SCREEN ─────────────────────────────────────────────────────
+  // ── GAME OVER ──────────────────────────────────────────────────────────────
   if (phase === 'over') {
-    const won = playerGoals > cpuGoals;
+    const won  = playerGoals > cpuGoals;
     const drew = playerGoals === cpuGoals;
     return (
-      <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-        <div style={{ fontSize: 72, marginBottom: 12 }}>{won ? '🏆' : drew ? '🤝' : '💀'}</div>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 52, color: won ? '#b8ff3c' : drew ? '#4aabff' : '#ff5757', marginBottom: 24 }}>
+      <div style={{ textAlign:'center', padding:'32px 20px' }}>
+        <div style={{ fontSize:68, marginBottom:10 }}>{won?'🏆':drew?'🤝':'💀'}</div>
+        <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:48, marginBottom:20,
+          color: won ? '#b8ff3c' : drew ? '#4aabff' : '#ff5757' }}>
           {won ? 'YOU WIN!' : drew ? 'DRAW!' : 'CPU WINS!'}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 32, background: 'var(--surface)', border: '1px solid var(--border-dim)', borderRadius: 16, padding: '20px 40px', maxWidth: 280, margin: '0 auto 28px' }}>
+        <div style={{ display:'flex', justifyContent:'center', gap:40, background:'var(--surface)', border:'1px solid var(--border-dim)', borderRadius:18, padding:'20px 48px', maxWidth:280, margin:'0 auto 28px' }}>
           <div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 40, color: '#4aff80' }}>{playerGoals}</div>
-            <div style={{ fontSize: 18 }}>{Array.from({ length: Math.min(playerGoals, 6) }).map((_, i) => <span key={i}>⚽</span>)}</div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: 'var(--muted)' }}>YOU</div>
+            <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:44, color:'#4aff80', lineHeight:1 }}>{playerGoals}</div>
+            <div style={{ fontSize:20 }}>{Array.from({length: Math.min(playerGoals, 5)}).map((_,i)=><span key={i}>⚽</span>)}</div>
+            <div style={{ fontFamily:"'Barlow Condensed'", fontSize:10, color:'var(--muted)', fontWeight:700 }}>YOU</div>
           </div>
-          <div style={{ alignSelf: 'center', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 24, color: 'var(--muted)' }}>vs</div>
+          <div style={{ alignSelf:'center', fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:28, color:'var(--muted)' }}>–</div>
           <div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 40, color: '#ff5757' }}>{cpuGoals}</div>
-            <div style={{ fontSize: 18 }}>{Array.from({ length: Math.min(cpuGoals, 6) }).map((_, i) => <span key={i}>⚽</span>)}</div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: 'var(--muted)' }}>CPU</div>
+            <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:44, color:'#ff5757', lineHeight:1 }}>{cpuGoals}</div>
+            <div style={{ fontSize:20 }}>{Array.from({length: Math.min(cpuGoals, 5)}).map((_,i)=><span key={i}>⚽</span>)}</div>
+            <div style={{ fontFamily:"'Barlow Condensed'", fontSize:10, color:'var(--muted)', fontWeight:700 }}>CPU</div>
           </div>
         </div>
-        <button onClick={() => onGameEnd?.({ playerGoals, cpuGoals, won, drew })} className="btn-lime" style={{ width: '100%', padding: '16px 0', fontSize: 20, borderRadius: 14 }}>
+        <button onClick={() => onGameEnd?.({ playerGoals, cpuGoals, won, drew })} className="btn-lime" style={{ width:'100%', padding:'16px 0', fontSize:20, borderRadius:14 }}>
           Play Again
         </button>
       </div>
     );
   }
 
-  // ── MAIN GAME BOARD ──────────────────────────────────────────────────────
-  const canPlay = (phase === 'attack' || phase === 'defend') && selected;
+  // ── PITCH ──────────────────────────────────────────────────────────────────
+  const posLabel = POSITION_LABELS[currentSlot];
+  const revealedCount = revealedSlots.length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, userSelect: 'none' }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:0, userSelect:'none' }}>
 
-      {/* Phase banner */}
-      {phase !== 'result' && (
-        <div style={{
-          margin: '0 12px 10px', padding: '9px 14px', borderRadius: 10,
-          fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: '0.06em',
-          background: phase === 'attack' ? 'rgba(255,87,87,0.1)' : 'rgba(74,171,255,0.1)',
-          border: `1px solid ${phase === 'attack' ? 'rgba(255,87,87,0.25)' : 'rgba(74,171,255,0.25)'}`,
-          color: phase === 'attack' ? '#ff8080' : '#7dc8ff',
-        }}>
-          {phase === 'attack' ? '⚔️ YOUR TURN — pick your attacker' : '🛡️ CPU IS ATTACKING — pick your defender'}
-        </div>
-      )}
+      {/* Result / phase banner */}
+      <div style={{
+        margin:'6px 10px',
+        padding:'8px 12px',
+        borderRadius:9,
+        minHeight:36,
+        background:'rgba(0,0,0,0.4)',
+        border:`1px solid ${
+          resultMsg?.playerScored && resultMsg?.cpuScored ? 'rgba(255,215,0,0.3)'
+          : resultMsg?.playerScored ? 'rgba(74,255,128,0.25)'
+          : resultMsg?.cpuScored   ? 'rgba(255,87,87,0.25)'
+          : 'rgba(255,255,255,0.06)'}`,
+        fontFamily:"'Barlow Condensed'",
+        fontWeight:700,
+        fontSize:12,
+        color: resultMsg?.playerScored && resultMsg?.cpuScored ? '#ffd700'
+             : resultMsg?.playerScored ? '#4aff80'
+             : resultMsg?.cpuScored   ? '#ff8080'
+             : '#aaa',
+        textAlign:'center', lineHeight:1.4,
+        transition:'all 0.3s',
+      }}>
+        {phase === 'ready' && !resultMsg && `Round ${currentSlot + 1}/11 — Play your ${posLabel}`}
+        {phase === 'ready' && resultMsg && resultMsg.text}
+        {(phase === 'revealing') && `⏳ Revealing ${posLabel}...`}
+        {phase === 'result' && resultMsg && resultMsg.text}
+      </div>
 
-      {resultMsg && phase === 'result' && (
-        <div style={{
-          margin: '0 12px 10px', padding: '9px 14px', borderRadius: 10,
-          fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 13,
-          background: 'rgba(0,0,0,0.4)', border: `1px solid ${resultMsg.color}44`,
-          color: resultMsg.color, textAlign: 'center',
-        }}>
-          {resultMsg.text}
-        </div>
-      )}
-
-      {/* Main pitch + score */}
-      <div style={{ display: 'flex', gap: 8, padding: '0 12px', marginBottom: 10 }}>
+      {/* Main pitch + score sidebar */}
+      <div style={{ display:'flex', gap:6, padding:'0 8px' }}>
 
         {/* Pitch */}
-        <div style={{ flex: 1, background: 'linear-gradient(180deg,#071407,#0a1c0a,#071407)', borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
-
-          {/* CPU half */}
-          <div style={{ padding: '8px 8px 6px', minHeight: 100 }}>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(74,171,255,0.4)', letterSpacing: '0.1em', marginBottom: 5 }}>
-              CPU TEAM — {cpuDeck.length} remaining
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-              {cpuDeck.map(c => <CardFaceDown key={c._id || c.id} small />)}
-              {cpuBoard.map((entry, i) => (
-                <CardFaceUp key={i} card={entry.card} small glow={entry.scored ? 'win' : undefined} />
-              ))}
-            </div>
-            {cpuDeck.length === 0 && cpuBoard.length === 0 && (
-              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 9, color: 'rgba(255,255,255,0.1)', textAlign: 'center', padding: '8px 0' }}>No cards</div>
-            )}
+        <div style={{
+          flex:1, borderRadius:14, overflow:'hidden',
+          border:'1px solid rgba(255,255,255,0.04)',
+          background:'linear-gradient(180deg,#071507 0%,#091e09 50%,#071507 100%)',
+        }}>
+          {/* CPU label */}
+          <div style={{ padding:'3px 8px', background:'rgba(74,171,255,0.04)', borderBottom:'none' }}>
+            <span style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:8, color:'rgba(74,171,255,0.35)', letterSpacing:'0.1em' }}>
+              CPU — {cCards.filter(Boolean).length} PLAYERS
+            </span>
           </div>
+
+          {/* CPU formation */}
+          <PitchHalf
+            cards={cCards}
+            isCpu={true}
+            revealedSlots={revealedSlots}
+            activeSlot={phase !== 'ready' ? currentSlot : -1}
+            results={results}
+          />
 
           {/* Centre line */}
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            <span style={{ background: '#0a1c0a', padding: '1px 8px', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.1em' }}>PITCH • RND {round}</span>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:18, borderTop:'1px dashed rgba(255,255,255,0.07)', borderBottom:'1px dashed rgba(255,255,255,0.07)', background:'rgba(255,255,255,0.01)', position:'relative' }}>
+            <span style={{ background:'#091e09', padding:'0 10px', fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:7.5, color:'rgba(255,255,255,0.15)', letterSpacing:'0.1em' }}>
+              ⚽ HALFWAY LINE
+            </span>
           </div>
 
-          {/* Player half */}
-          <div style={{ padding: '6px 8px 8px', minHeight: 100 }}>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 8, color: 'rgba(184,255,60,0.35)', letterSpacing: '0.1em', marginBottom: 5 }}>
-              YOUR PLAYED
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-              {playerBoard.map((entry, i) => (
-                <CardFaceUp key={i} card={entry.card} small glow={entry.scored ? 'win' : undefined} />
-              ))}
-              {playerBoard.length === 0 && (
-                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 9, color: 'rgba(255,255,255,0.1)', padding: '8px 0' }}>Your cards appear here when played</div>
-              )}
-            </div>
+          {/* Player formation */}
+          <PitchHalf
+            cards={pCards}
+            isCpu={false}
+            revealedSlots={revealedSlots}
+            activeSlot={phase !== 'ready' ? currentSlot : -1}
+            results={results}
+          />
+
+          {/* Player label */}
+          <div style={{ padding:'3px 8px', background:'rgba(184,255,60,0.03)', borderTop:'none' }}>
+            <span style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:8, color:'rgba(184,255,60,0.3)', letterSpacing:'0.1em' }}>
+              YOU — {pCards.filter(Boolean).length} PLAYERS
+            </span>
           </div>
         </div>
 
         {/* Score sidebar */}
-        <ScoreSide playerGoals={playerGoals} cpuGoals={cpuGoals} />
+        <ScoreSide
+          playerGoals={playerGoals}
+          cpuGoals={cpuGoals}
+          round={revealedCount}
+        />
       </div>
 
-      {/* Player hand */}
-      <div style={{ padding: '0 12px' }}>
-        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 9, color: '#4a6050', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-          {phase === 'attack' ? 'YOUR SQUAD — tap to pick attacker:' : phase === 'defend' ? 'YOUR SQUAD — tap to pick defender:' : 'Waiting...'}
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', marginBottom: 12 }}>
-          {playerDeck.map(card => (
-            <CardFaceUp
-              key={card._id || card.id}
-              card={card}
-              selected={selected?._id === card._id}
-              onClick={() => (phase === 'attack' || phase === 'defend') ? setSelected(s => s?._id === card._id ? null : card) : null}
-            />
-          ))}
-          {playerDeck.length === 0 && (
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, color: '#4a6050', padding: '16px 0', width: '100%', textAlign: 'center' }}>No cards remaining</div>
-          )}
-        </div>
-
-        {(phase === 'attack' || phase === 'defend') && (
-          <button
-            onClick={handlePlayerPlay}
-            disabled={!selected}
-            style={{
-              width: '100%', padding: '14px 0', fontSize: 19, borderRadius: 12,
-              fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800,
-              cursor: selected ? 'pointer' : 'not-allowed',
-              background: selected ? '#b8ff3c' : '#1a2a1a',
-              border: 'none', color: selected ? '#050c05' : '#4a6050',
-              transition: 'all 0.15s',
-            }}
-          >
-            {phase === 'attack' ? '⚔️ ATTACK!' : '🛡️ DEFEND!'}
-          </button>
-        )}
+      {/* Play button */}
+      <div style={{ padding:'10px 10px 0' }}>
+        <button
+          onClick={playNextRound}
+          disabled={phase !== 'ready'}
+          style={{
+            width:'100%', padding:'15px 0', fontSize:18, borderRadius:13,
+            fontFamily:"'Barlow Condensed'", fontWeight:800, letterSpacing:'0.03em',
+            border:'none', cursor: phase === 'ready' ? 'pointer' : 'not-allowed',
+            background: phase === 'ready' ? '#b8ff3c' : '#1a2a1a',
+            color: phase === 'ready' ? '#050c05' : '#4a6050',
+            transition:'all 0.15s',
+            boxShadow: phase === 'ready' ? '0 4px 20px rgba(184,255,60,0.25)' : 'none',
+          }}
+        >
+          {phase === 'ready'
+            ? `⚽ Play Round ${currentSlot + 1} — ${posLabel}`
+            : phase === 'revealing' ? '⏳ Revealing cards...'
+            : phase === 'result'    ? '⌛ Next round coming...'
+            : '🏁 Game over'}
+        </button>
       </div>
+
     </div>
   );
 }
