@@ -3,7 +3,17 @@ import { persist } from 'zustand/middleware';
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-export const BUDGET_MAX = 100; // £100M
+export const BUDGET_MAX = 100;
+
+// Formation: 11 slots in 4-3-3
+// 0=GK, 1=LB, 2=CB, 3=CB, 4=RB, 5=LM, 6=CM, 7=RM, 8=LW, 9=ST, 10=RW
+export const POSITION_LABELS = ['GK','LB','CB','CB','RB','LM','CM','RM','LW','ST','RW'];
+
+export const POS_COLOR = {
+  GK:'#e67e00', CB:'#1a6ef5', LB:'#1a6ef5', RB:'#1a6ef5',
+  CDM:'#15a050', CM:'#15a050', LM:'#15a050', RM:'#15a050', CAM:'#e05010', SS:'#e05010',
+  LW:'#cc2020', RW:'#cc2020', ST:'#aa1010',
+};
 
 export const POWERUPS = [
   { id: 'pu_atk10',  name: 'Speed Boost',  emoji: '⚡', desc: '+10 ATK all squad', atk: 10, def: 0,  cost: 150 },
@@ -30,12 +40,13 @@ export function applyPowerUps(card, powerUpIds = []) {
 
 const safeArray = (v) => (Array.isArray(v) ? v : []);
 
+const emptyFormation = () => Array(11).fill(null);
+
 export const useStore = create(
   persist(
     (set, get) => ({
-      // ── Player library ──
+      // ── Library ──
       library: [],
-
       addToLibrary: (card) => {
         const c = { ...card, _id: card._id || uid() };
         set(s => ({ library: [...safeArray(s.library), c] }));
@@ -45,9 +56,12 @@ export const useStore = create(
         set(s => ({ library: safeArray(s.library).map(c => c._id === id ? { ...c, ...updates } : c) }));
       },
       removeFromLibrary: (id) => {
+        // Also clear from any team formation
         const teams = safeArray(get().teams).map(t => ({
           ...t,
           players: safeArray(t.players).filter(p => p._id !== id),
+          formationSlots: (Array.isArray(t.formationSlots) ? t.formationSlots : emptyFormation())
+            .map(c => (c && c._id === id) ? null : c),
         }));
         set(s => ({ library: safeArray(s.library).filter(c => c._id !== id), teams }));
       },
@@ -57,7 +71,7 @@ export const useStore = create(
       activeTeamId: null,
 
       createTeam: (name) => {
-        const team = { id: uid(), name, players: [] };
+        const team = { id: uid(), name, players: [], formationSlots: emptyFormation() };
         set(s => ({ teams: [...safeArray(s.teams), team], activeTeamId: team.id }));
         return team;
       },
@@ -67,35 +81,66 @@ export const useStore = create(
       deleteTeam: (id) => {
         set(s => ({
           teams: safeArray(s.teams).filter(t => t.id !== id),
-          activeTeamId: s.activeTeamId === id ? (safeArray(s.teams)[0]?.id || null) : s.activeTeamId,
+          activeTeamId: s.activeTeamId === id ? (safeArray(s.teams).find(t => t.id !== id)?.id || null) : s.activeTeamId,
         }));
       },
       setActiveTeam: (id) => set({ activeTeamId: id }),
 
+      // Formation slot: slot 0-10 holds a card object or null
+      setFormationSlot: (teamId, slotIdx, card) => {
+        set(s => ({
+          teams: safeArray(s.teams).map(t => {
+            if (t.id !== teamId) return t;
+            const slots = Array.isArray(t.formationSlots) ? [...t.formationSlots] : emptyFormation();
+            // Remove card from any existing slot first
+            const cleaned = slots.map((c, i) => (c && card && c._id === card._id && i !== slotIdx) ? null : c);
+            cleaned[slotIdx] = card || null;
+            // Sync players array from formation (non-null slots)
+            const players = cleaned.filter(Boolean);
+            return { ...t, formationSlots: cleaned, players };
+          }),
+        }));
+      },
+      clearFormationSlot: (teamId, slotIdx) => {
+        set(s => ({
+          teams: safeArray(s.teams).map(t => {
+            if (t.id !== teamId) return t;
+            const slots = Array.isArray(t.formationSlots) ? [...t.formationSlots] : emptyFormation();
+            slots[slotIdx] = null;
+            const players = slots.filter(Boolean);
+            return { ...t, formationSlots: slots, players };
+          }),
+        }));
+      },
+      getFormationLineup: (teamId) => {
+        const team = safeArray(get().teams).find(t => t.id === teamId);
+        if (!team) return emptyFormation();
+        const slots = Array.isArray(team.formationSlots) ? team.formationSlots : emptyFormation();
+        return [...slots, ...Array(11)].slice(0, 11);
+      },
+
+      // Legacy team player methods (kept for compatibility)
       addToTeam: (teamId, card) => {
         const team = safeArray(get().teams).find(t => t.id === teamId);
         if (!team) return false;
-        const players = safeArray(team.players);
-        const currentBudget = players.reduce((s, c) => s + (c.price || 0), 0);
-        if (currentBudget + (card.price || 0) > BUDGET_MAX) return false;
-        if (players.some(p => p._id === card._id)) return false;
-        set(s => ({
-          teams: safeArray(s.teams).map(t => t.id === teamId
-            ? { ...t, players: [...safeArray(t.players), card] }
-            : t
-          ),
-        }));
+        const slots = Array.isArray(team.formationSlots) ? [...team.formationSlots] : emptyFormation();
+        if (slots.some(c => c && c._id === card._id)) return false;
+        // Find first empty slot
+        const emptySlot = slots.findIndex(c => c === null);
+        if (emptySlot === -1) return false;
+        get().setFormationSlot(teamId, emptySlot, card);
         return true;
       },
       removeFromTeam: (teamId, cardId) => {
         set(s => ({
-          teams: safeArray(s.teams).map(t => t.id === teamId
-            ? { ...t, players: safeArray(t.players).filter(p => p._id !== cardId) }
-            : t
-          ),
+          teams: safeArray(s.teams).map(t => {
+            if (t.id !== teamId) return t;
+            const slots = (Array.isArray(t.formationSlots) ? t.formationSlots : emptyFormation())
+              .map(c => (c && c._id === cardId) ? null : c);
+            return { ...t, formationSlots: slots, players: slots.filter(Boolean) };
+          }),
         }));
       },
-
       getTeamBudget: (teamId) => {
         const team = safeArray(get().teams).find(t => t.id === teamId);
         if (!team) return 0;
@@ -124,13 +169,11 @@ export const useStore = create(
       toggleActivePU: (id) => {
         set(s => {
           const cur = safeArray(s.activePowerUps);
-          return {
-            activePowerUps: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id],
-          };
+          return { activePowerUps: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] };
         });
       },
 
-      // ── Game session (ephemeral) ──
+      // ── Game session ──
       sessionId: null,
       gameState: null,
       lastResult: null,
@@ -139,7 +182,7 @@ export const useStore = create(
       clearGame: () => set({ sessionId: null, gameState: null, lastResult: null }),
     }),
     {
-      name: 'match-attax-v7',  // bumped version to clear any corrupt persisted state
+      name: 'match-attax-v9',
       partialize: (s) => ({
         library:        safeArray(s.library),
         teams:          safeArray(s.teams),
@@ -151,7 +194,10 @@ export const useStore = create(
       merge: (persisted, current) => ({
         ...current,
         library:        safeArray(persisted?.library),
-        teams:          safeArray(persisted?.teams),
+        teams:          safeArray(persisted?.teams).map(t => ({
+          ...t,
+          formationSlots: Array.isArray(t.formationSlots) ? t.formationSlots : emptyFormation(),
+        })),
         activeTeamId:   persisted?.activeTeamId  || null,
         coins:          persisted?.coins         ?? 500,
         ownedPowerUps:  safeArray(persisted?.ownedPowerUps),
