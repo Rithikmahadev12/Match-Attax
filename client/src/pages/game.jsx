@@ -19,7 +19,7 @@ export default function Game() {
     setSelectedIds(prev =>
       prev.includes(card._id)                          // ← was card.id; library uses _id
         ? prev.filter(id => id !== card._id)
-        : prev.length < 10 ? [...prev, card._id] : prev
+        : prev.length < 11 ? [...prev, card._id] : prev
     );
   };
 
@@ -41,14 +41,14 @@ export default function Game() {
     setPlayerDeck([]);
   };
 
-  if (collection.length < 5 && phase === 'select') {
+  if (collection.length < 11 && phase === 'select') {
     return (
       <div className="page-content" style={{ maxWidth: 480, margin: '0 auto', padding: '80px 20px 0', textAlign: 'center' }}>
         <div style={{ fontSize: 64, marginBottom: 16 }}>📦</div>
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, color: '#fff', marginBottom: 8 }}>
           NOT ENOUGH CARDS
         </div>
-        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, marginBottom: 28 }}>You need at least 5 cards to battle.</p>
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, marginBottom: 28 }}>You need at least 11 cards to battle.</p>
         <button onClick={() => navigate('/collection')} className="btn-lime" style={{ padding: '14px 32px', fontSize: 18 }}>
           Browse Cards
         </button>
@@ -96,14 +96,14 @@ export default function Game() {
           }}>
             BUILD YOUR <span style={{ color: 'var(--lime)' }}>DECK</span>
           </div>
-          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 4 }}>Pick 5–10 cards to battle with</p>
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 4 }}>Pick exactly 11 cards to battle with</p>
         </div>
         <div style={{
           fontFamily: "'Barlow Condensed', sans-serif",
           fontWeight: 900, fontSize: 28,
-          color: selectedIds.length >= 5 ? 'var(--lime)' : 'rgba(255,255,255,0.3)',
+          color: selectedIds.length === 11 ? 'var(--lime)' : 'rgba(255,255,255,0.3)',
         }}>
-          {selectedIds.length}<span style={{ fontSize: 16, color: 'var(--muted)', fontWeight: 700 }}>/10</span>
+          {selectedIds.length}<span style={{ fontSize: 16, color: 'var(--muted)', fontWeight: 700 }}>/11</span>
         </div>
       </div>
 
@@ -129,14 +129,14 @@ export default function Game() {
       }}>
         <button
           onClick={handleStart}
-          disabled={selectedIds.length < 5 || loading}
+          disabled={selectedIds.length !== 11 || loading}
           className="btn-lime"
           style={{
             width: '100%',
             padding: '16px 0',
             fontSize: 22,
             borderRadius: 16,
-            boxShadow: selectedIds.length >= 5 ? '0 8px 32px var(--lime-glow-strong)' : 'none',
+            boxShadow: selectedIds.length === 11 ? '0 8px 32px var(--lime-glow-strong)' : 'none',
           }}
         >
           {loading ? 'STARTING...' : `⚔️ BATTLE! (${selectedIds.length} cards)`}
