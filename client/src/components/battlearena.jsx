@@ -118,7 +118,7 @@ function PitchHalf({ cards, isCpu, revealedSlots, activeSlot, results }) {
   );
 }
 
-// ─── Score sidebar ────────────────────────────────────────────────────────────
+// ─── Score sidebar ────────────────────────────────────────────────────────
 function ScoreSide({ playerGoals, cpuGoals, round }) {
   return (
     <div style={{
@@ -146,8 +146,13 @@ function ScoreSide({ playerGoals, cpuGoals, round }) {
   );
 }
 
-// ─── Main BattleArena ─────────────────────────────────────────────────────────
+// ─── Main BattleArena ────────────────────────────────────────────────────────
 export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd }) {
+  // REQUIRE EXACTLY 11 PLAYERS
+  const playerCount = playerCards.filter(Boolean).length;
+  const cpuCount    = cpuCards.filter(Boolean).length;
+  const teamReady   = playerCount === 11;
+
   // Pad both sides to 11 slots
   const pCards = [...Array(11)].map((_, i) => playerCards[i] || null);
   const cCards = [...Array(11)].map((_, i) => cpuCards[i] || null);
@@ -230,8 +235,26 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
     }, 700);
   };
 
-  // ── COIN FLIP ──────────────────────────────────────────────────────────────
+  // ── COIN FLIP (BLOCKED IF TEAM < 11) ─────────────────────────────────────────
   if (phase === 'coinflip') {
+    if (!teamReady) {
+      return (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:320, gap:16, padding:24 }}>
+          <div style={{ fontSize:60 }}>⛔</div>
+          <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:32, color:'#ff5757' }}>
+            Team Incomplete
+          </div>
+          <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:16, color:'var(--muted)', textAlign:'center' }}>
+            You must select all 11 players before starting the match.
+          </div>
+          <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:20, color:'var(--lime)' }}>
+            {playerCount} / 11 selected
+          </div>
+        </div>
+      );
+    }
+
+    // Normal coinflip
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:320, gap:20, padding:24 }}>
         <div style={{ fontSize:64, animation: flipping ? 'coinFlip 1.2s ease-in-out infinite' : 'none' }}>
@@ -253,7 +276,7 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
     );
   }
 
-  // ── GAME OVER ──────────────────────────────────────────────────────────────
+  // ── GAME OVER ───────────────────────────────────────────────────────────────
   if (phase === 'over') {
     const won  = playerGoals > cpuGoals;
     const drew = playerGoals === cpuGoals;
@@ -264,7 +287,7 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
           color: won ? '#b8ff3c' : drew ? '#4aabff' : '#ff5757' }}>
           {won ? 'YOU WIN!' : drew ? 'DRAW!' : 'CPU WINS!'}
         </div>
-        <div style={{ display:'flex', justifyContent:'center', gap:40, background:'var(--surface)', border:'1px solid var(--border-dim)', borderRadius:18, padding:'20px 48px', maxWidth:280, margin:'0 auto 28px' }}>
+        <div style={{ display:'flex', justifyContent:'center', gap:40, background:'var(--surface)', border:'1px solid var(--border-dim)', borderRadius:18, padding:'20px 48px', maxWidth:280, margin:'0 auto 24px' }}>
           <div>
             <div style={{ fontFamily:"'Barlow Condensed'", fontWeight:900, fontSize:44, color:'#4aff80', lineHeight:1 }}>{playerGoals}</div>
             <div style={{ fontSize:20 }}>{Array.from({length: Math.min(playerGoals, 5)}).map((_,i)=><span key={i}>⚽</span>)}</div>
@@ -284,7 +307,7 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
     );
   }
 
-  // ── PITCH ──────────────────────────────────────────────────────────────────
+  // ── PITCH ─────────────────────────────────────────────────────────────────────
   const posLabel = POSITION_LABELS[currentSlot];
   const revealedCount = revealedSlots.length;
 
@@ -313,7 +336,10 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
         textAlign:'center', lineHeight:1.4,
         transition:'all 0.3s',
       }}>
-        {phase === 'ready' && !resultMsg && `Round ${currentSlot + 1}/11 — Play your ${posLabel}`}
+        {!teamReady
+          ? `Team incomplete — ${playerCount}/11 selected`
+          : phase === 'ready' && !resultMsg && `Round ${currentSlot + 1}/11 — Play your ${posLabel}`
+        }
         {phase === 'ready' && resultMsg && resultMsg.text}
         {(phase === 'revealing') && `⏳ Revealing ${posLabel}...`}
         {phase === 'result' && resultMsg && resultMsg.text}
@@ -345,7 +371,7 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
           />
 
           {/* Centre line */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:18, borderTop:'1px dashed rgba(255,255,255,0.07)', borderBottom:'1px dashed rgba(255,255,255,0.07)', background:'rgba(255,255,255,0.01)', position:'relative' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:18, borderTop:'1px dashed rgba(255,255,255,0.07)', borderBottom:'1px dashed rgba(255,255,255,0.07)', background:'rgba(0,0,0,0.2)' }}>
             <span style={{ background:'#091e09', padding:'0 10px', fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:7.5, color:'rgba(255,255,255,0.15)', letterSpacing:'0.1em' }}>
               ⚽ HALFWAY LINE
             </span>
@@ -380,15 +406,15 @@ export default function BattleArena({ playerCards = [], cpuCards = [], onGameEnd
       <div style={{ padding:'10px 10px 0' }}>
         <button
           onClick={playNextRound}
-          disabled={phase !== 'ready'}
+          disabled={phase !== 'ready' || !teamReady}
           style={{
             width:'100%', padding:'15px 0', fontSize:18, borderRadius:13,
             fontFamily:"'Barlow Condensed'", fontWeight:800, letterSpacing:'0.03em',
-            border:'none', cursor: phase === 'ready' ? 'pointer' : 'not-allowed',
-            background: phase === 'ready' ? '#b8ff3c' : '#1a2a1a',
-            color: phase === 'ready' ? '#050c05' : '#4a6050',
+            border:'none', cursor: phase === 'ready' && teamReady ? 'pointer' : 'not-allowed',
+            background: phase === 'ready' && teamReady ? '#b8ff3c' : '#1a2a1a',
+            color: phase === 'ready' && teamReady ? '#050c05' : '#4a6050',
             transition:'all 0.15s',
-            boxShadow: phase === 'ready' ? '0 4px 20px rgba(184,255,60,0.25)' : 'none',
+            boxShadow: phase === 'ready' && teamReady ? '0 4px 20px rgba(184,255,60,0.25)' : 'none',
           }}
         >
           {phase === 'ready'
