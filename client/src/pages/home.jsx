@@ -5,7 +5,7 @@ import { useState } from 'react';
 export default function Home() {
   const { library, addToLibrary } = useStore();   // ← was `collection` / `addCard`; store exposes `library` / `addToLibrary`
   const collection = Array.isArray(library) ? library : [];
-  const canPlay = collection.length >= 5;
+  const canPlay = collection.length >= 11;
   const [showUnlock, setShowUnlock] = useState(false);
   const [pw, setPw] = useState('');
   const [msg, setMsg] = useState('');
@@ -91,7 +91,7 @@ export default function Home() {
         }}>
           {[
             { val: collection.length, label: 'Cards', accent: 'var(--lime)' },
-            { val: canPlay ? 'READY' : `${Math.max(0, 5 - collection.length)} MORE`, label: canPlay ? 'Battle' : 'Needed', accent: canPlay ? '#4aff80' : '#ff6060' },
+            { val: canPlay ? 'READY' : `${Math.max(0, 11 - collection.length)} MORE`, label: canPlay ? 'Battle' : 'Needed', accent: canPlay ? '#4aff80' : '#ff6060' },
             { val: 50, label: 'Total', accent: 'rgba(255,255,255,0.3)' },
           ].map(({ val, label, accent }, i) => (
             <div key={i} style={{
@@ -197,7 +197,7 @@ export default function Home() {
                 <div style={{ fontSize: 28, marginBottom: 8 }}>⚔️</div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff' }}>Play</div>
                 <div style={{ fontSize: 12, color: canPlay ? '#ffd700' : 'var(--muted)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, marginTop: 4 }}>
-                  {canPlay ? 'Ready!' : `Need ${5 - collection.length} more`}
+                  {canPlay ? 'Ready!' : `Need ${11 - collection.length} more`}
                 </div>
               </div>
             </Link>
