@@ -124,7 +124,7 @@ export const useStore = create(
         const team = safeArray(get().teams).find(t => t.id === teamId);
         if (!team) return false;
         const slots = Array.isArray(team.formationSlots) ? [...team.formationSlots] : emptyFormation();
-        if (slots.some(c => c && c._id === card._id)) return false;
+        if (slots.filter(Boolean).length >= 11) return false;
         // Find first empty slot
         const emptySlot = slots.findIndex(c => c === null);
         if (emptySlot === -1) return false;
