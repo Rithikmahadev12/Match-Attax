@@ -1,52 +1,15 @@
 import { useState, useRef } from 'react';
 import { useStore } from '../store/gameStore';
+import { useOCR } from '../hooks/useOCR';
+import { extractStatsFromText } from '../utils/cardMatcher';
 
 const POSITIONS = ['GK','CB','LB','RB','CDM','CM','CAM','LW','RW','ST','SS'];
 
-// Use Claude API to extract card data from image
-async function extractCardFromImage(base64Image) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: base64Image },
-          },
-          {
-            type: 'text',
-            text: `This is a Match Attax football card. Extract the following and respond ONLY with valid JSON, no markdown:
-{
-  "name": "player full name",
-  "club": "club name",
-  "nation": "country",
-  "position": "position abbreviation e.g. ST, CM, GK",
-  "attack": number 1-99,
-  "defense": number 1-99,
-  "price": number in millions e.g. 15,
-  "special": null or "MOTM" or "100Club" or "HatTrick"
-}
-If you cannot read a value clearly, make a reasonable guess. attack and defense must be numbers.`,
-          },
-        ],
-      }],
-    }),
-  });
-  const data = await response.json();
-  const text = data.content?.[0]?.text || '';
-  const clean = text.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
-}
-
 export default function Scanner() {
   const { addToLibrary } = useStore();
+  const { scanImage, scanning, progress } = useOCR();
   const [status, setStatus] = useState('idle'); // idle | scanning | confirm | saved | error
-  const [preview, setPreview] = useState(null); // base64
+  const [preview, setPreview] = useState(null);
   const [extracted, setExtracted] = useState(null);
   const [editing, setEditing] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -63,18 +26,77 @@ export default function Scanner() {
     r.readAsDataURL(blob);
   });
 
-  const processImage = async (base64, previewUrl) => {
-    setPreview(previewUrl);
+  // Extract card data from OCR text using pattern matching
+  const parseCardFromText = (rawText) => {
+    const lines = rawText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+
+    // Try to find player name (usually one of the longer lines)
+    const namePatterns = /^[A-Z][a-z]+\s+[A-Z][a-z]+/;
+    let name = '';
+    for (const line of lines) {
+      if (namePatterns.test(line) && line.length < 40) {
+        name = line;
+        break;
+      }
+    }
+
+    // Try to find position (2-3 uppercase letters)
+    let position = '';
+    for (const line of lines) {
+      if (/^(GK|CB|LB|RB|CDM|CM|CAM|LW|RW|ST|SS)$/i.test(line)) {
+        position = line.toUpperCase();
+        break;
+      }
+    }
+
+    // Extract numbers for attack/defense (2 digit numbers)
+    const numbers = rawText.match(/\b(\d{2})\b/g) || [];
+    const uniqueNumbers = [...new Set(numbers.map(Number))].sort((a, b) => a - b);
+
+    let attack = uniqueNumbers[0] || 50;
+    let defense = uniqueNumbers[1] || 50;
+
+    // Try to find club name (usually capitalized words)
+    let club = '';
+    for (const line of lines) {
+      if (line.length > 3 && line.length < 30 && /^[A-Z]/.test(line) && line !== name && line !== position) {
+        club = line;
+        break;
+      }
+    }
+
+    return {
+      name: name || 'Unknown Player',
+      position: position || 'ST',
+      club: club || 'Unknown Club',
+      nation: 'Unknown',
+      attack: Math.min(99, Math.max(1, attack)),
+      defense: Math.min(99, Math.max(1, defense)),
+      price: 10,
+      special: null,
+    };
+  };
+
+  const processImage = async (source) => {
     setStatus('scanning');
     setErrorMsg('');
     try {
-      const card = await extractCardFromImage(base64);
-      setExtracted({ ...card, photo: previewUrl });
-      setEditing({ ...card, photo: previewUrl });
+      const rawText = await scanImage(source);
+      
+      if (!rawText || rawText.trim().length < 10) {
+        throw new Error('Could not extract text from image');
+      }
+
+      const card = parseCardFromText(rawText);
+      setExtracted({ ...card, photo: source });
+      setEditing({ ...card, photo: source });
       setStatus('confirm');
     } catch (e) {
       setStatus('error');
-      setErrorMsg('Could not read card. Try better lighting or a clearer angle.');
+      setErrorMsg('Could not read card. Try:\n• Better lighting\n• Clearer angle\n• Larger card in frame');
     }
   };
 
@@ -82,14 +104,14 @@ export default function Scanner() {
     const file = e.target.files?.[0];
     if (!file) return;
     const url = URL.createObjectURL(file);
-    const base64 = await toBase64(file);
-    processImage(base64, url);
+    setPreview(url);
+    processImage(url);
   };
 
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
@@ -115,9 +137,9 @@ export default function Scanner() {
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     const url = canvas.toDataURL('image/jpeg', 0.9);
-    const base64 = url.split(',')[1];
+    setPreview(url);
     stopCamera();
-    processImage(base64, url);
+    processImage(url);
   };
 
   const handleSave = () => {
@@ -163,7 +185,7 @@ export default function Scanner() {
           SCAN A <span style={{ color: 'var(--lime)' }}>CARD</span>
         </div>
         <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 6 }}>
-          Point camera at your physical card — AI will read it automatically
+          Point camera at your physical card — local OCR will read it automatically
         </p>
       </div>
 
@@ -194,7 +216,7 @@ export default function Scanner() {
           {status === 'scanning' && (
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
               <div style={{ width: 56, height: 56, border: '3px solid rgba(184,255,60,0.2)', borderTop: '3px solid #b8ff3c', borderRadius: '50%', animation: 'spin360 0.8s linear infinite' }} />
-              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 14, color: '#b8ff3c', letterSpacing: '0.1em' }}>AI READING CARD...</div>
+              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, fontSize: 14, color: '#b8ff3c', letterSpacing: '0.1em' }}>OCR READING ({progress}%)...</div>
             </div>
           )}
 
